@@ -32,7 +32,7 @@ Clone or copy the script into a file (e.g., `pash.sh`) and make it executable:
 
 ```bash
 chmod +x vault.sh
-./vault.sh
+./pash.sh
 ```
 
 The first time you save or decrypt an entry, you'll be prompted to set a master password. This will be hashed and stored in `.vault_master.hash`.
