@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 
-# Vault-Konfiguration
+# Vault configuration
 VAULT="${VAULT_DIR:-vault}"
 mkdir -p "$VAULT"
 MASTER_HASH_FILE="$VAULT/.vault_master.hash"
 
 prompt_and_verify_password() {
-  read -s -p "Master password: " MASTER
+  trap 'secure_unset' EXIT  # Cleanup on function exit
+
+  read -s -r -p "Master password: " MASTER
   echo
-  HASHED_MASTER=$(echo -n "$MASTER" | sha256sum | awk '{print $1}')
+  HASHED_MASTER=$(printf "%s" "$MASTER" | sha256sum | awk '{print $1}')
+
   if [[ ! -f "$MASTER_HASH_FILE" ]]; then
     echo "$HASHED_MASTER" > "$MASTER_HASH_FILE"
     echo "Master password initialized."
@@ -16,15 +19,27 @@ prompt_and_verify_password() {
     STORED_HASH=$(awk '{print $1}' "$MASTER_HASH_FILE")
     if [[ "$HASHED_MASTER" != "$STORED_HASH" ]]; then
       echo "Incorrect master password."
-      unset MASTER
       return 1
     fi
   fi
+
   return 0
 }
 
 secure_unset() {
-  unset MASTER pw pw2 username note name selected HASHED_MASTER STORED_HASH
+  # Overwrite sensitive variables
+  MASTER=""
+  HASHED_MASTER=""
+  STORED_HASH=""
+  pw=""
+  pw2=""
+  username=""
+  note=""
+  name=""
+  selected=""
+
+  # Unset variables
+  unset MASTER HASHED_MASTER STORED_HASH pw pw2 username note name selected
 }
 
 main_menu() {
@@ -42,7 +57,7 @@ main_menu() {
 
   case "$action" in
     "Save new entry")
-      read -p "Entry name (e.g. github): " name
+      read -p "Entry name (e.g., github): " name
       [[ -z "$name" || "$name" =~ [^a-zA-Z0-9._-] ]] && echo "Invalid entry name." && return
 
       read -p "Username (optional): " username
@@ -117,8 +132,6 @@ main_menu() {
       exit 0
       ;;
   esac
-
-  secure_unset
 }
 
 main_menu
