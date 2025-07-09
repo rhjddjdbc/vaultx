@@ -1,43 +1,42 @@
-# pash
+# pash – A Minimal Offline Password Manager in Bash
 
-**pash** is a simple, secure, and offline password manager written in Bash. It uses OpenSSL to encrypt credentials and stores each entry in your local vault folder. Entries are protected using a master password, which is hashed and validated on use.
+pash is a lightweight, secure, and offline password manager written entirely in Bash. It uses OpenSSL for encryption and supports safe storage, auditing, and retrieval of credentials locally—no network access or cloud sync required.
 
 ---
 
 ## Features
 
-- Save encrypted password entries with optional usernames and notes
-- Secure encryption using AES-256-CBC with PBKDF2 and 200,000 iterations
-- Stores metadata (creation timestamp, label, optional note)
-- Securely verifies the master password using a SHA-256 hash
-- Backup vaults as ZIP archives
-- Audit all stored entries with metadata
-- Search and select entries using [fzf](https://github.com/junegunn/fzf)
+- Save encrypted password entries with optional username and note
+- Uses AES-256-CBC encryption with PBKDF2 (200,000 iterations)
+- Secure metadata: creation timestamp, label, optional note
+- Strong lockout policy on repeated failed login attempts
+- Integrity verification via HMAC (SHA-256)
+- Backup the entire vault into a ZIP archive
+- Fuzzy-search entries with fzf
+- Audit saved entries with modification times and notes
 
 ---
 
 ## Requirements
 
-- `bash` (version 4 or later recommended)
-- `openssl`
-- `sha256sum`
-- `zip`
-- `fzf`
+- bash (v4 or later)
+- openssl
+- zip
+- fzf
+- htpasswd (from apache2-utils or similar)
 
 ---
 
 ## Setup
 
-Clone or copy the script into a file (e.g., `pash.sh`) and make it executable:
+Make the script executable and run it:
 
 ```bash
-chmod +x vault.sh
+chmod +x pash.sh
 ./pash.sh
 ```
 
-The first time you save or decrypt an entry, you'll be prompted to set a master password. This will be hashed and stored in `.vault_master.hash`.
-
-You can set a custom vault location using the environment variable:
+To use a custom vault directory, set the environment variable:
 
 ```bash
 export VAULT_DIR="$HOME/.myvault"
@@ -47,32 +46,37 @@ export VAULT_DIR="$HOME/.myvault"
 
 ## Usage
 
-You can perform the following actions using an interactive menu powered by `fzf`:
+Launch the script and select an action from the interactive fzf menu:
 
-- **Save new entry**: Add a password with optional username and note.
-- **Decrypt entry**: View an existing password entry.
-- **Delete entry**: Permanently remove a saved entry.
-- **Backup vault**: Create a ZIP archive of your vault.
-- **Audit mode**: View a summary of all saved entries with timestamps.
-- **Cancel**: Exit the script safely.
+- Save new entry: create an encrypted entry with password, username, and optional note  
+- Decrypt entry: view stored credentials securely  
+- Delete entry: permanently remove an entry  
+- Backup vault: archive the entire vault folder as a ZIP file  
+- Audit vault: display saved entries with timestamps and note previews  
+- Exit: close the script  
 
 ---
 
 ## Security Notes
 
-- Master password is never stored in plaintext—only a hash is saved for validation.
-- Password data is encrypted using OpenSSL with salt, strong key derivation (`pbkdf2`), and AES-256.
-- Sensitive data like passwords and the master password are unset from memory after use.
+- Master password is hashed and verified with htpasswd -B; only the hash is stored  
+- Password data is encrypted using OpenSSL (aes-256-cbc) with salt and key stretching  
+- Sensitive variables are wiped from memory using secure_unset()  
+- Integrity is validated using per-entry HMACs (SHA-256 with OpenSSL)  
+- Timeouts and lockout mechanism protect against brute-force attacks  
 
 ---
 
-## might come later
+## Roadmap
 
-- Clipboard integration and automatic password generation are not included.
-- This tool is designed for local use only and does not sync with cloud services.
+Future enhancements may include:
+
+- Clipboard copy integration
+- Secure password generator  
+- Sync and export of vaults via Git, GitHub, or GitLab  
 
 ---
 
 ## License
 
-This project is licensed under the [GNU General Public License v3.0.].
+Licensed under the GNU General Public License v3.0 (https://www.gnu.org/licenses/gpl-3.0.html)
