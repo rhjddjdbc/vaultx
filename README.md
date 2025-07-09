@@ -48,7 +48,7 @@ export VAULT_DIR="$HOME/.myvault"
 
 Launch the script and select an action from the interactive fzf menu:
 
-- Save new entry: create an encrypted entry with password, username, and optional note  
+- Save new entry: create an encrypted entry with password, optional username, and optional note  
 - Decrypt entry: view stored credentials securely  
 - Delete entry: permanently remove an entry  
 - Backup vault: archive the entire vault folder as a ZIP file  
