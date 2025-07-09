@@ -71,6 +71,7 @@ Launch the script and select an action from the interactive fzf menu:
 
 Future enhancements may include:
 
+- argon2 hash
 - Clipboard copy integration
 - Secure password generator  
 - Sync and export of vaults via Git, GitHub, or GitLab  
