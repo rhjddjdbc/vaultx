@@ -1,6 +1,6 @@
-# pash – A Minimal Offline Password Manager in Bash
+# vaultx – A Minimal Offline Password Manager in Bash
 
-pash is a lightweight, secure, and offline password manager written entirely in Bash. It uses OpenSSL for encryption and supports safe storage, auditing, and retrieval of credentials locally—no network access or cloud sync required.
+vaultx is a lightweight, secure, and offline password manager written entirely in Bash. It uses OpenSSL for encryption and supports safe storage, auditing, and retrieval of credentials locally—no network access or cloud sync required.
 
 ---
 
