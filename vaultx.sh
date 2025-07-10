@@ -1,53 +1,53 @@
 #!/usr/bin/env bash
 set -euo pipefail
 umask 077
+# ------------ Configuration ------------
+PASSWORD_LENGTH="${PASSWORD_LENGTH:-24}"  # Default length for generated passwords
+# ---------------------------------------
 
-if   command -v doas  &>/dev/null; then ESC_CMD="doas"
-elif command -v sudo  &>/dev/null; then ESC_CMD="sudo"
-else                            ESC_CMD=""
+
+# Escalation tool detection
+if command -v doas &>/dev/null; then ESC_CMD="doas"
+elif command -v sudo &>/dev/null; then ESC_CMD="sudo"
+else ESC_CMD=""
 fi
 
+# Ensure /proc/self/fd is properly protected
 perms=$(stat -Lc '%a' /proc/self/fd)
 other=${perms: -1}
 if (( other != 0 )); then
-  echo "WARNING: /proc/self/fd mode is ${perms}, FDs may leak to other users!" >&2
+  echo "WARNING: /proc/self/fd has permissions $perms – file descriptors may leak to other users." >&2
   if [[ -n $ESC_CMD ]]; then
-    echo "Attempting to remount /proc with hidepid=2 via ${ESC_CMD}…" >&2
+    echo "Attempting to remount /proc with hidepid=2 using $ESC_CMD…" >&2
     $ESC_CMD mount -o remount,hidepid=2 /proc
     if [[ $? -eq 0 ]]; then
-      echo "SUCCESS: /proc is now mounted with hidepid=2." >&2
+      echo "SUCCESS: /proc has been remounted with hidepid=2." >&2
     else
-      echo "ERROR: remount failed. Please check your ${ESC_CMD} setup." >&2
+      echo "ERROR: Failed to remount. Check your $ESC_CMD configuration." >&2
     fi
   else
-    echo "No sudo/doas found – cannot remount /proc automatically." >&2
+    echo "No privilege tool found. Cannot remount /proc automatically." >&2
   fi
 fi
 
-# Session timeout in seconds
+# Session timeout configuration
 export TMOUT=300
 readonly TMOUT
 
-# Start a background timer that sends ALRM to this script after TMOUT seconds
+# Session timer utilities
 start_timer() {
   ( sleep "$TMOUT" && kill -ALRM $$ ) &
   TIMER_PID=$!
 }
-
-# Kill the background timer
 cleanup_timer() {
   kill "${TIMER_PID:-}" 2>/dev/null || true
 }
-
-# Trap handlers
-trap 'echo "Error on line $LINENO: $BASH_COMMAND"; cleanup_timer; exit 1' ERR
-trap 'echo "Session timed out after '"$TMOUT"' seconds."; cleanup_timer; exit 1' ALRM
+trap 'echo "Error on line $LINENO: $BASH_COMMAND" >&2; cleanup_timer; exit 1' ERR
+trap 'echo "Session timed out after $TMOUT seconds." >&2; cleanup_timer; exit 1' ALRM
 trap 'cleanup_timer' EXIT
-
-# initialize timer
 start_timer
 
-# Predeclare vars for set -u
+# Predeclare variables for strict mode
 MASTER="" HASHED="" STORED_HASH=""
 pw="" pw2="" username="" note=""
 name="" selected="" action=""
@@ -61,9 +61,9 @@ mkdir -p "$VAULT"
 
 # Lockout policy
 MAX_ATTEMPTS=5
-LOCKOUT_DURATION=600   # seconds
+LOCKOUT_DURATION=600
 
-# Securely wipe sensitive variables
+# Secure variable unset
 secure_unset() {
   local val len var
   for var in MASTER pw pw2 username; do
@@ -77,7 +77,7 @@ secure_unset() {
   unset HASHED STORED_HASH
 }
 
-# Constant-time string compare to thwart timing attacks
+# Constant-time comparison
 hash_equals() {
   local a="$1" b="$2"
   (( ${#a} != ${#b} )) && return 1
@@ -88,37 +88,83 @@ hash_equals() {
   (( res == 0 ))
 }
 
-# Prompt/init or verify master password, enforce lockout
+# Clipboard helper (Wayland and X11) with auto-clear timeout
+copy_to_clipboard() {
+  local timeout=30  # seconds before clipboard clears
+  if command -v wl-copy &>/dev/null; then
+    echo "$1" | wl-copy
+    echo "Copied to clipboard using wl-copy. It will be cleared in $timeout seconds." >&2
+    ( sleep "$timeout" && wl-copy < /dev/null ) &
+  elif command -v xclip &>/dev/null; then
+    echo "$1" | xclip -selection clipboard
+    echo "Copied to clipboard using xclip. It will be cleared in $timeout seconds." >&2
+    ( sleep "$timeout" && echo -n | xclip -selection clipboard ) &
+  else
+    echo "No clipboard tool found. Install wl-clipboard or xclip." >&2
+  fi
+}
+
+# Passgen/input
+generate_password_prompt() {
+  local choice pw copy_choice custom_len
+  choice=$(printf "%s\n" \
+    "Enter manually" \
+    "Generate secure password" \
+  | fzf --prompt="Choose password method: ")
+
+  case "$choice" in
+    "Enter manually")
+      read -t 60 -s -r -p "Password (timeout 60s): " pw; echo
+      read -t 60 -s -r -p "Repeat password (timeout 60s): " pw2; echo
+      [[ "$pw" != "$pw2" ]] && echo "Passwords do not match." >&2 && return 1
+      [[ -z "$pw" ]] && echo "Empty password not allowed." >&2 && return 1
+      printf '%s' "$pw"
+      ;;
+    "Generate secure password")
+      read -r -p "Desired password length (default: $PASSWORD_LENGTH): " custom_len
+      custom_len="${custom_len:-$PASSWORD_LENGTH}"
+      pw=$(openssl rand -base64 "$custom_len")
+      echo "Generated password: $pw" >&2
+      read -r -p "Copy generated password to clipboard? [y/N]: " copy_choice
+      if [[ "$copy_choice" =~ ^[Yy]$ ]]; then
+        copy_to_clipboard "$pw"
+      fi
+      printf '%s' "$pw"
+      ;;
+    *)
+      echo "No selection made." >&2
+      return 1
+      ;;
+  esac
+}
+
+# Master password prompt & verification
 prompt_and_verify_password() {
-  # check for active lockout
   if [[ -f $FAIL_COUNT_FILE && -f $LAST_FAIL_FILE ]]; then
     fails=$(<"$FAIL_COUNT_FILE")
     last=$(<"$LAST_FAIL_FILE")
     now=$(date +%s)
     if (( fails >= MAX_ATTEMPTS && now - last < LOCKOUT_DURATION )); then
       wait_time=$(( LOCKOUT_DURATION - (now - last) ))
-      echo "Too many failed attempts. Try again in ${wait_time}s."
+      echo "Too many failed attempts. Retry in $wait_time seconds." >&2
       return 1
     fi
   fi
 
-  # read master password
-  if ! read -t 60 -s -r -p "Master password (60s timeout): " MASTER; then
-    echo -e "\nNo input for 60s. Aborting."
+  if ! read -t 60 -s -r -p "Master password (timeout 60s): " MASTER; then
+    echo -e "\nTimeout or no input. Aborting." >&2
     return 1
   fi
   echo
 
-  # initialize if first run
   if [[ ! -f "$MASTER_HASH_FILE" ]]; then
     HASHED=$(htpasswd -nbB dummy "$MASTER" | cut -d: -f2)
     echo "$HASHED" > "$MASTER_HASH_FILE"
-    echo "Master password initialized."
+    echo "Master password initialized successfully." >&2
     rm -f "$FAIL_COUNT_FILE" "$LAST_FAIL_FILE"
     return 0
   fi
 
-  # verify stored hash
   STORED_HASH=$(<"$MASTER_HASH_FILE")
   tmp=$(mktemp)
   printf 'dummy:%s\n' "$STORED_HASH" > "$tmp"
@@ -137,7 +183,7 @@ prompt_and_verify_password() {
     backoff=$(( fails * 2 ))
     (( backoff > LOCKOUT_DURATION )) && backoff=$LOCKOUT_DURATION
     sleep "$backoff"
-    echo "Incorrect master password. Attempt $fails of $MAX_ATTEMPTS."
+    echo "Invalid master password. Attempt $fails of $MAX_ATTEMPTS." >&2
     return 1
   fi
 }
@@ -151,25 +197,23 @@ main_menu() {
     "Audit vault" \
     "Exit" \
   | fzf --prompt="Select action: ")
-  [[ -z "$action" ]] && echo "No action selected." && exit 1
+  [[ -z "$action" ]] && echo "No action selected." >&2 && exit 1
 
   case "$action" in
     "Save new entry")
-      if ! read -t 30 -r -p "Entry name (e.g. github) [30s]: " name; then
-        echo -e "\nTimed out."; exit 1
-      fi
-      [[ -z "$name" || ! "$name" =~ ^[A-Za-z0-9._-]+$ ]] && echo "Invalid entry name." >&2 && exit 1
+      read -t 30 -r -p "Entry name (e.g. github) [timeout 30s]: " name \
+        || { echo -e "\nTimeout reached." >&2; exit 1; }
+      [[ -z "$name" || ! "$name" =~ ^[A-Za-z0-9._-]+$ ]] \
+        && { echo "Invalid entry name." >&2; exit 1; }
 
-      vault_root=$(realpath -m "$VAULT")
       vault_file="$VAULT/$name.bin"
-      [[ "$(realpath -m "$vault_file")" != "$vault_root/"* ]] && echo "Invalid path." >&2 && exit 1
+      vault_root=$(realpath -m "$VAULT")
+      [[ "$(realpath -m "$vault_file")" != "$vault_root/"* ]] \
+        && { echo "Invalid path." >&2; exit 1; }
 
-      read -t 30 -r -p "Username (optional) [30s]: " username || username=""
+      read -t 30 -r -p "Username (optional) [timeout 30s]: " username || username=""
 
-      read -t 60 -s -r -p "Password (60s): " pw; echo
-      read -t 60 -s -r -p "Repeat password (60s): " pw2; echo
-      [[ "$pw" != "$pw2" ]] && echo "Passwords do not match." >&2 && exit 1
-      [[ -z "$pw" ]] && echo "Empty password not allowed." >&2 && exit 1
+      pw=$(generate_password_prompt) || exit 1
 
       prompt_and_verify_password || exit 1
 
@@ -177,7 +221,7 @@ main_menu() {
         [[ -n "$username" ]] && printf "Username: %s\n" "$username"
         printf "Password: %s\n" "$pw"
       } | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
-            -out "$vault_file" -pass fd:3 3<<<"$MASTER"
+          -out "$vault_file" -pass fd:3 3<<<"$MASTER"
 
       hmac=$(openssl dgst -sha256 -mac HMAC \
         -macopt key:file:/dev/fd/3 "$vault_file" 3<<<"$MASTER" \
@@ -186,7 +230,7 @@ main_menu() {
 
       secure_unset
 
-      read -t 60 -r -p "Optional note [60s]: " note || note=""
+      read -t 60 -r -p "Optional note [timeout 60s]: " note || note=""
       timestamp=$(date +"%Y-%m-%d %H:%M:%S")
       {
         echo "Label: $name"
@@ -200,12 +244,13 @@ main_menu() {
 
     "Decrypt entry")
       selected=$(find "$VAULT" -maxdepth 1 -type f -name "*.bin" \
-        | fzf --prompt="Choose entry to decrypt: ")
-      [[ -z "$selected" ]] && echo "Cancelled." && exit 1
+        | fzf --prompt="Select entry to decrypt: ")
+      [[ -z "$selected" ]] && echo "Cancelled." >&2 && exit 1
 
       file="$selected"
       hmac_file="${file%.bin}.hmac"
-      [[ ! -f "$hmac_file" ]] && echo "HMAC missing." && exit 1
+      [[ ! -f "$hmac_file" ]] \
+        && { echo "HMAC file missing for entry." >&2; exit 1; }
 
       prompt_and_verify_password || exit 1
 
@@ -214,14 +259,23 @@ main_menu() {
         -macopt key:file:/dev/fd/3 "$file" 3<<<"$MASTER" \
         | awk '{print $2}')
       if ! hash_equals "$expected" "$actual"; then
-        echo "Integrity check failed."
+        echo "Integrity verification failed." >&2
         secure_unset
         exit 1
       fi
 
-      openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
-        -in "$file" -pass fd:3 3<<<"$MASTER" \
-        || echo "Decryption failed."
+      decrypted=$(openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+        -in "$file" -pass fd:3 3<<<"$MASTER")
+
+      user=$(printf '%s\n' "$decrypted" | awk -F': ' '/^Username:/ { print $2 }')
+      pass=$(printf '%s\n' "$decrypted" | awk -F': ' '/^Password:/ { print $2 }')
+
+      [[ -n "$user" ]] && printf 'Username: %s\n' "$user"
+      printf 'Password: %s\n' "$pass"
+      read -r -p "Copy password to clipboard? [y/N]: " copy_choice
+      if [[ "$copy_choice" =~ ^[Yy]$ ]]; then
+        copy_to_clipboard "$pass"
+      fi
 
       secure_unset
       ;;
@@ -229,14 +283,14 @@ main_menu() {
     "Delete entry")
       selected=$(find "$VAULT" -maxdepth 1 -type f -name "*.bin" \
         | fzf --prompt="Select entry to delete: ")
-      [[ -z "$selected" ]] && echo "Cancelled." && exit 1
+      [[ -z "$selected" ]] && echo "Cancelled." >&2 && exit 1
 
       read -t 30 -r -p "Delete '$(basename "$selected")'? [y/N]: " confirm
       if [[ "$confirm" =~ ^[yY]$ ]]; then
         rm -f "$selected" "${selected%.bin}.hmac" "${selected%.bin}.note"
-        echo "Deleted entry."
+        echo "Entry deleted."
       else
-        echo "Aborted."
+        echo "Operation cancelled."
       fi
       ;;
 
@@ -245,21 +299,22 @@ main_menu() {
       backup="$HOME/vault-backup-$ts.zip"
       zip -rq "$backup" "$VAULT"
       chmod 600 "$backup"
-      echo "Backup created at $backup."
+      echo "Vault backup saved to $backup."
       ;;
 
     "Audit vault")
-      echo "Vault contents:"
-      find "$VAULT" -maxdepth 1 -name "*.bin" | while read -r e; do
-        n=$(basename "$e" .bin)
-        m=$(stat -c '%y' "$e")
-        echo "- $n (modified: $m)"
-        [[ -f "$VAULT/$n.note" ]] && head -n3 "$VAULT/$n.note" | sed 's/^/    /'
+      echo "Listing vault contents:"
+      find "$VAULT" -maxdepth 1 -name "*.bin" | while read -r entry; do
+        label=$(basename "$entry" .bin)
+        modified=$(stat -c '%y' "$entry")
+        echo "- $label (last modified: $modified)"
+        [[ -f "$VAULT/$label.note" ]] \
+          && head -n3 "$VAULT/$label.note" | sed 's/^/    /'
       done
       ;;
 
     "Exit")
-      echo "Goodbye."
+      echo "Exiting."
       exit 0
       ;;
   esac
