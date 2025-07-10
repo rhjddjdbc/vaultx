@@ -59,6 +59,14 @@ Launch the script and select an action from the interactive fzf menu:
 
 ## Security Notes
 
+- **File Permissions**: A strict `umask 077` ensures that new files are only accessible by the owner, reducing exposure of sensitive data.
+
+- **/proc Protection**: Checks the visibility of file descriptors:
+  ```bash
+  perms=$(stat -Lc "%a" /proc/self/fd)
+  if (( ${perms: -1} )); then
+    echo "WARNING: /proc/self/fd is world-readable!" >&2
+  fi
 - Master password is hashed and verified with htpasswd -B; only the hash is stored  
 - Password data is encrypted using OpenSSL (aes-256-cbc) with salt and key stretching  
 - Sensitive variables are wiped from memory using secure_unset()  
