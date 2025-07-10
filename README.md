@@ -24,6 +24,7 @@ vaultx is a lightweight, secure, and offline password manager written entirely i
 - zip
 - fzf
 - htpasswd (from apache2-utils or similar)
+- (Optional) sudo or doas for remounting in vaultx. Is only required if there is danger.
 
 ---
 
