@@ -26,6 +26,7 @@ vaultx is a lightweight, secure, and offline password manager written entirely i
 - htpasswd (from apache2-utils or similar)
 - (Optional) sudo or doas for remounting in vaultx for /proc safety.
   (Is only required if there is danger.)
+- (Optional) wl-clip or xclip
 
 ---
 
@@ -84,8 +85,6 @@ Launch the script and select an action from the interactive fzf menu:
 Future enhancements may include:
 
 - argon2 hash
-- Clipboard copy integration
-- Secure password generator  
 - Sync and export of vaults via Git, GitHub, or GitLab  
 
 ---
