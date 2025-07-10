@@ -1,9 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 umask 077
-# ------------ Configuration ------------
-PASSWORD_LENGTH="${PASSWORD_LENGTH:-24}"  # Default length for generated passwords
-# ---------------------------------------
+
+# load config 
+CONFIG_FILE="$HOME/.config/vaultx/config.env"
+if [[ -f "$CONFIG_FILE" ]]; then
+  # shellcheck source=/dev/null
+  source "$CONFIG_FILE"
+else
+  echo "No config file found at $CONFIG_FILE. Using defaults." >&2
+fi
+# defaults
+VAULT="${VAULT_DIR:-vault}"
+export TMOUT="${TMOUT_VALUE:-300}"
+readonly TMOUT
+PASSWORD_LENGTH="${PASSWORD_LENGTH:-24}"
 
 
 # Escalation tool detection
@@ -19,8 +30,7 @@ if (( other != 0 )); then
   echo "WARNING: /proc/self/fd has permissions $perms – file descriptors may leak to other users." >&2
   if [[ -n $ESC_CMD ]]; then
     echo "Attempting to remount /proc with hidepid=2 using $ESC_CMD…" >&2
-    $ESC_CMD mount -o remount,hidepid=2 /proc
-    if [[ $? -eq 0 ]]; then
+    if $ESC_CMD mount -o remount,hidepid=2 /proc; then
       echo "SUCCESS: /proc has been remounted with hidepid=2." >&2
     else
       echo "ERROR: Failed to remount. Check your $ESC_CMD configuration." >&2
@@ -30,9 +40,6 @@ if (( other != 0 )); then
   fi
 fi
 
-# Session timeout configuration
-export TMOUT=300
-readonly TMOUT
 
 # Session timer utilities
 start_timer() {
@@ -53,7 +60,6 @@ pw="" pw2="" username="" note=""
 name="" selected="" action=""
 
 # Vault configuration
-VAULT="${VAULT_DIR:-vault}"
 MASTER_HASH_FILE="$VAULT/.master_hash"
 FAIL_COUNT_FILE="$VAULT/.fail_count"
 LAST_FAIL_FILE="$VAULT/.last_fail"
@@ -296,7 +302,7 @@ main_menu() {
 
     "Backup vault")
       ts=$(date +"%Y%m%d-%H%M%S")
-      backup="$HOME/vault-backup-$ts.zip"
+      backup="${BACKUP_DIR:-$HOME}/vault-backup-$ts.zip"
       zip -rq "$backup" "$VAULT"
       chmod 600 "$backup"
       echo "Vault backup saved to $backup."
@@ -321,3 +327,4 @@ main_menu() {
 }
 
 main_menu
+
