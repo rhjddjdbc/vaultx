@@ -66,7 +66,9 @@ Launch the script and select an action from the interactive fzf menu:
   perms=$(stat -Lc "%a" /proc/self/fd)
   if (( ${perms: -1} )); then
     echo "WARNING: /proc/self/fd is world-readable!" >&2
-  fi
+  fi 
+  
+- If sudo or doas is installed, it will be remonuted.
 - Master password is hashed and verified with htpasswd -B; only the hash is stored  
 - Password data is encrypted using OpenSSL (aes-256-cbc) with salt and key stretching  
 - Sensitive variables are wiped from memory using secure_unset()  
