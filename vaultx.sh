@@ -10,7 +10,7 @@ if [[ -f "$CONFIG_FILE" ]]; then
 else
   echo "No config file found at $CONFIG_FILE. Using defaults." >&2
 fi
-# defaults
+
 VAULT="${VAULT_DIR:-vault}"
 export TMOUT="${TMOUT_VALUE:-300}"
 readonly TMOUT
@@ -212,7 +212,15 @@ main_menu() {
       [[ -z "$name" || ! "$name" =~ ^[A-Za-z0-9._-]+$ ]] \
         && { echo "Invalid entry name." >&2; exit 1; }
 
+      # Ensure entry name is unique, like you are :) (e.g. google, google-2, google-3)
       vault_file="$VAULT/$name.bin"
+      counter=2
+      while [[ -f "$vault_file" ]]; do
+        vault_file="$VAULT/$name-$counter.bin"
+        name="$name-$counter"
+        ((counter++))
+      done
+
       vault_root=$(realpath -m "$VAULT")
       [[ "$(realpath -m "$vault_file")" != "$vault_root/"* ]] \
         && { echo "Invalid path." >&2; exit 1; }
@@ -327,4 +335,3 @@ main_menu() {
 }
 
 main_menu
-
