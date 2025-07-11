@@ -194,6 +194,19 @@ prompt_and_verify_password() {
   fi
 }
 
+display_ascii_qr_temp() {
+  local secret="$1"
+  if command -v qrencode &>/dev/null; then
+    echo "$secret" | qrencode -t ANSIUTF8
+    echo -e "\nQR-Code will be cleared in 30 seconds..."
+    sleep 30
+    clear
+  else
+    echo "qrencode not installed. Cannot generate QR code." >&2
+    return 1
+  fi
+}
+
 main_menu() {
   action=$(printf "%s\n" \
     "Save new entry" \
@@ -255,58 +268,79 @@ main_menu() {
 
       echo "Saved entry '$name' with HMAC."
       ;;
-
     "Decrypt entry")
-      selected=$(find "$VAULT" -maxdepth 1 -type f -name "*.bin" \
-        | fzf --prompt="Select entry to decrypt: ")
-      [[ -z "$selected" ]] && echo "Cancelled." >&2 && exit 1
+        selected=$(find "$VAULT" -maxdepth 1 -type f -name "*.bin" \
+            | fzf --prompt="Select entry to decrypt: ")
+        [[ -z "$selected" ]] && echo "Cancelled." >&2 && exit 1
 
-      file="$selected"
-      hmac_file="${file%.bin}.hmac"
-      [[ ! -f "$hmac_file" ]] \
-        && { echo "HMAC file missing for entry." >&2; exit 1; }
+        file="$selected"
+        hmac_file="${file%.bin}.hmac"
+        [[ ! -f "$hmac_file" ]] \
+            && { echo "HMAC file missing for entry." >&2; exit 1; }
 
-      prompt_and_verify_password || exit 1
+        prompt_and_verify_password || exit 1
 
-      expected=$(awk '{print $1}' "$hmac_file")
-      actual=$(openssl dgst -sha256 -mac HMAC \
-        -macopt key:file:/dev/fd/3 "$file" 3<<<"$MASTER" \
-        | awk '{print $2}')
-      if ! hash_equals "$expected" "$actual"; then
-        echo "Integrity verification failed." >&2
+        expected=$(awk '{print $1}' "$hmac_file")
+        actual=$(openssl dgst -sha256 -mac HMAC \
+            -macopt key:file:/dev/fd/3 "$file" 3<<<"$MASTER" \
+            | awk '{print $2}')
+        if ! hash_equals "$expected" "$actual"; then
+            echo "Integrity verification failed." >&2
+            secure_unset
+            exit 1
+        fi
+
+        decrypted=$(openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+            -in "$file" -pass fd:3 3<<<"$MASTER")
+
+        user=$(printf '%s\n' "$decrypted" | awk -F': ' '/^Username:/ { print $2 }')
+        pass=$(printf '%s\n' "$decrypted" | awk -F': ' '/^Password:/ { print $2 }')
+
+        [[ -n "$user" ]] && printf 'Username: %s\n' "$user"
+
+        pass_action=$(printf "%s\n" \
+            "Display password only" \
+            "Copy password only" \
+            "Display and copy password" \
+            "Show ASCII QR code (clears after 30s)" \
+            "Cancel" \
+            | fzf --prompt="Choose password handling method: ")
+
+        case "$pass_action" in
+            "Display password only")
+                printf 'Password: %s\n' "$pass"
+                ;;
+            "Copy password only")
+                copy_to_clipboard "$pass"
+                ;;
+            "Display and copy password")
+                printf 'Password: %s\n' "$pass"
+                copy_to_clipboard "$pass"
+                ;;
+            "Show ASCII QR code (clears after 30s)")
+                display_ascii_qr_temp "$pass"
+                ;;
+            *)
+                echo "Action cancelled." >&2
+                ;;
+        esac
+
         secure_unset
-        exit 1
-      fi
-
-      decrypted=$(openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
-        -in "$file" -pass fd:3 3<<<"$MASTER")
-
-      user=$(printf '%s\n' "$decrypted" | awk -F': ' '/^Username:/ { print $2 }')
-      pass=$(printf '%s\n' "$decrypted" | awk -F': ' '/^Password:/ { print $2 }')
-
-      [[ -n "$user" ]] && printf 'Username: %s\n' "$user"
-      printf 'Password: %s\n' "$pass"
-      read -r -p "Copy password to clipboard? [y/N]: " copy_choice
-      if [[ "$copy_choice" =~ ^[Yy]$ ]]; then
-        copy_to_clipboard "$pass"
-      fi
-
-      secure_unset
-      ;;
-
+        ;;
+        
     "Delete entry")
-      selected=$(find "$VAULT" -maxdepth 1 -type f -name "*.bin" \
-        | fzf --prompt="Select entry to delete: ")
-      [[ -z "$selected" ]] && echo "Cancelled." >&2 && exit 1
+        selected=$(find "$VAULT" -maxdepth 1 -type f -name "*.bin" \
+            | fzf --prompt="Select entry to delete: ")
+        [[ -z "$selected" ]] && echo "Cancelled." >&2 && exit 1
 
-      read -t 30 -r -p "Delete '$(basename "$selected")'? [y/N]: " confirm
-      if [[ "$confirm" =~ ^[yY]$ ]]; then
-        rm -f "$selected" "${selected%.bin}.hmac" "${selected%.bin}.note"
-        echo "Entry deleted."
-      else
-        echo "Operation cancelled."
-      fi
-      ;;
+        read -t 30 -r -p "Delete '$(basename "$selected")'? [y/N]: " confirm
+        if [[ "$confirm" =~ ^[yY]$ ]]; then
+            rm -f "$selected" "${selected%.bin}.hmac" "${selected%.bin}.note"
+            echo "Entry deleted."
+        else
+            echo "Operation cancelled."
+        fi
+        ;;
 
     "Backup vault")
       ts=$(date +"%Y%m%d-%H%M%S")
