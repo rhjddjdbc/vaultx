@@ -27,6 +27,7 @@ vaultx is a lightweight, secure, and offline password manager written entirely i
 - (Optional) sudo or doas for remounting in vaultx for /proc safety.
   (Is only required if there is danger.)
 - (Optional) wl-clip or xclip
+- (Optional) qrencode to display qr-code in terminal to share it with your mobile device.
 
 ---
 
