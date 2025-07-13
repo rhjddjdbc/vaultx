@@ -1,7 +1,3 @@
-Sure! Here's the README with corrected spelling and grammar:
-
----
-
 # VaultX - Secure Password Manager
 
 VaultX is a command-line-based password manager designed to securely store, manage, and retrieve passwords. It uses strong encryption and integrates with the **Have I Been Pwned** (HIBP) API to check if a password has been involved in any known data breaches. VaultX is implemented in Bash and requires minimal dependencies to function.
@@ -148,6 +144,3 @@ LOCKOUT_DURATION=600
 
 This script is licensed under the **GPL-3.0 License**.
 
----
-
-This version of the README now has the spelling and grammar fixed. Let me know if you need further adjustments!
