@@ -20,7 +20,7 @@ VaultX is a command-line-based password manager designed to securely store, mana
 * **openssl** for AES-256-CBC encryption
 * **htpasswd** for password hashing
 * **curl** (optional, for HIBP breach check)
-* **fzf** for fuzzy searching entries (optional)
+* **fzf** for fuzzy searching entries
 * **xclip** or **wl-copy** for clipboard functionality (optional)
 * **qrencode** for generating ASCII QR codes (optional)
 
