@@ -11,8 +11,6 @@ else
 fi
 
 VAULT="${VAULT_DIR:-vault}"
-export TMOUT="${TMOUT_VALUE:-300}"
-readonly TMOUT
 PASSWORD_LENGTH="${PASSWORD_LENGTH:-24}"
 
 # Escalation tool detection
@@ -40,20 +38,6 @@ protect_fd() {
   fi
 }
 
-# Session timer utilities
-start_timer() {
-  ( sleep "$TMOUT" && kill -ALRM $$ ) &
-  TIMER_PID=$!
-}
-
-cleanup_timer() {
-  kill "${TIMER_PID:-}" 2>/dev/null || true
-}
-
-trap 'echo "Error on line $LINENO: $BASH_COMMAND" >&2; cleanup_timer; exit 1' ERR
-trap 'echo "Session timed out after $TMOUT seconds." >&2; cleanup_timer; exit 1' ALRM
-trap 'cleanup_timer' EXIT
-start_timer
 
 # Predeclare variables for strict mode
 MASTER="" HASHED="" STORED_HASH=""
@@ -125,14 +109,33 @@ generate_password_prompt() {
   local choice pw copy_choice custom_len
   choice=$(printf "%s\n" "Enter manually" "Generate secure password" | fzf --prompt="Choose password method: ")
   case "$choice" in
-    "Enter manually")
-      read -t 60 -s -r -p "Password (timeout 60s): " pw; echo
-      read -t 60 -s -r -p "Repeat password (timeout 60s): " pw2; echo
-      [[ "$pw" != "$pw2" ]] && echo "Passwords do not match." >&2 && return 1
-      [[ -z "$pw" ]] && echo "Empty password not allowed." >&2 && return 1
-      printf '%s' "$pw"
-      ;;
-    "Generate secure password")
+"Enter manually")
+  read -t 60 -s -r -p "Password (timeout 60s): " pw; echo >&2
+  read -t 60 -s -r -p "Repeat password (timeout 60s): " pw2; echo >&2
+
+  # Check if passwords match
+  if [[ "$pw" != "$pw2" ]]; then
+    echo "Passwords do not match." >&2
+    return 1
+  fi
+
+  if [[ -z "$pw" ]]; then
+    echo "Empty password not allowed." >&2
+    return 1
+  fi
+
+  # Ask user if they want to check the password with HIBP
+  read -r -p "Do you want to check if this password has appeared in data breaches? [y/N]: " check_choice
+  if [[ "$check_choice" =~ ^[Yy]$ ]]; then
+    if ! check_pwned_password "$pw"; then
+      return 1
+    fi
+  fi
+
+  printf '%s' "$pw"
+  ;;
+
+  "Generate secure password")
       read -r -p "Desired password length (default: $PASSWORD_LENGTH): " custom_len
       custom_len="${custom_len:-$PASSWORD_LENGTH}"
       pw=$(openssl rand -base64 "$custom_len")
@@ -214,6 +217,38 @@ display_ascii_qr_temp() {
   fi
 }
 
+# Check password against Have I Been Pwned API
+check_pwned_password() {
+  local password="$1"
+  local sha1hash prefix suffix response line hash count
+
+  # SHA1 hash in uppercase
+  sha1hash=$(printf '%s' "$password" | sha1sum | awk '{print toupper($1)}')
+  prefix=${sha1hash:0:5}
+  suffix=${sha1hash:5}
+
+  # Query the API using K-Anonymity
+  response=$(curl -s "https://api.pwnedpasswords.com/range/$prefix")
+  if [[ -z "$response" ]]; then
+    echo "Warning: Unable to reach HIBP API. Password was not checked." >&2
+    return 0  # return 0 if no breach check is done (i.e., API not reachable)
+  fi
+
+  # Check if the suffix appears in the response
+  while read -r line; do
+    hash=${line%%:*}
+#    count=${line##*:}
+    if [[ "$hash" == "$suffix" ]]; then
+       
+       echo -e "\033[1;33mPassword got breached.\033[0m" >&2
+       return 1  # Return 1 to signal the password should not be saved
+    fi
+   done <<< "$response"
+
+  return 0  # return 0 if no issues found
+}
+
+
 # Save new entry to vault
 save_new_entry() {
   read -t 30 -r -p "Entry name (e.g. github) [timeout 30s]: " name \
@@ -221,7 +256,7 @@ save_new_entry() {
   [[ -z "$name" || ! "$name" =~ ^[A-Za-z0-9._-]+$ ]] \
     && { echo "Invalid entry name." >&2; exit 1; }
 
-  # Ensure entry name is unique, like you are :) (e.g. google, google-2, google-3)
+  # Ensure entry name is unique
   vault_file="$VAULT/$name.bin"
   counter=2
   while [[ -f "$vault_file" ]]; do
@@ -236,10 +271,20 @@ save_new_entry() {
 
   read -t 30 -r -p "Username (optional) [timeout 30s]: " username || username=""
 
+  # Generate and validate password
   pw=$(generate_password_prompt) || exit 1
 
+  # Check if the password is breached before saving
+  if ! check_pwned_password "$pw"; then
+    echo "Password is compromised in a data breach. Please choose another one." >&2
+    secure_unset
+    return 1  # Exit if password is breached
+  fi
+
+  # Prompt for and verify master password
   prompt_and_verify_password || exit 1
 
+  # Save the password entry
   {
     [[ -n "$username" ]] && printf "Username: %s\n" "$username"
     printf "Password: %s\n" "$pw"
@@ -253,6 +298,7 @@ save_new_entry() {
 
   secure_unset
 
+  # Optional note
   read -t 60 -r -p "Optional note [timeout 60s]: " note || note=""
   timestamp=$(date +"%Y-%m-%d %H:%M:%S")
   {
@@ -265,7 +311,6 @@ save_new_entry() {
   echo "Saved entry '$name' with HMAC."
 }
 
-# Decrypt existing entry from vault
 decrypt_entry() {
   selected=$(find "$VAULT" -maxdepth 1 -type f -name "*.bin" \
       | fzf --prompt="Select entry to decrypt: ")
@@ -294,37 +339,48 @@ decrypt_entry() {
   user=$(printf '%s\n' "$decrypted" | awk -F': ' '/^Username:/ { print $2 }')
   pass=$(printf '%s\n' "$decrypted" | awk -F': ' '/^Password:/ { print $2 }')
 
-  [[ -n "$user" ]] && printf 'Username: %s\n' "$user"
-
   pass_action=$(printf "%s\n" \
       "Display password only" \
       "Copy password only" \
       "Display and copy password" \
       "Show ASCII QR code (clears after 30s)" \
+      "Breach check" \
       "Cancel" \
       | fzf --prompt="Choose password handling method: ")
 
   case "$pass_action" in
-      "Display password only")
-          printf 'Password: %s\n' "$pass"
-          ;;
-      "Copy password only")
-          copy_to_clipboard "$pass"
-          ;;
-      "Display and copy password")
-          printf 'Password: %s\n' "$pass"
-          copy_to_clipboard "$pass"
-          ;;
-      "Show ASCII QR code (clears after 30s)")
-          display_ascii_qr_temp "$pass"
-          ;;
-      *)
-          echo "Action cancelled." >&2
-          ;;
+    "Display password only")
+        printf 'Password: %s\n' "$pass"
+        ;;
+    "Copy password only")
+        copy_to_clipboard "$pass"
+        ;;
+    "Display and copy password")
+        printf 'Password: %s\n' "$pass"
+        copy_to_clipboard "$pass"
+        ;;
+    "Show ASCII QR code (clears after 30s)")
+        [[ -n "$user" ]] && printf 'Username: %s\n' "$user"
+	display_ascii_qr_temp "$pass"
+        ;;
+    "Breach check")
+        if check_pwned_password "$pass"; then
+            echo "Password not found in any known breaches." >&2
+        fi
+        ;;
+    *)
+        echo "Action cancelled." >&2
+        ;;
   esac
+
+# Exclude the username display if either "Breach check" or "Show ASCII QR code (clears after 30s)" is selected
+  if [[ "$pass_action" != "Breach check" && "$pass_action" != "Show ASCII QR code (clears after 30s)" && -n "$user" ]]; then
+      printf 'Username: %s\n' "$user"
+  fi
 
   secure_unset
 }
+
 
 # Delete an entry
 delete_entry() {
@@ -398,4 +454,3 @@ main_menu() {
 }
 
 main_menu
-
