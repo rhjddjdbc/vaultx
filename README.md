@@ -1,95 +1,153 @@
-# vaultx – A Minimal Offline Password Manager in Bash
-
-vaultx is a lightweight, secure, and offline password manager written entirely in Bash. It uses OpenSSL for encryption and supports safe storage, auditing, and retrieval of credentials locally—no network access or cloud sync required.
+Sure! Here's the README with corrected spelling and grammar:
 
 ---
+
+# VaultX - Secure Password Manager
+
+VaultX is a command-line-based password manager designed to securely store, manage, and retrieve passwords. It uses strong encryption and integrates with the **Have I Been Pwned** (HIBP) API to check if a password has been involved in any known data breaches. VaultX is implemented in Bash and requires minimal dependencies to function.
 
 ## Features
 
-- Save encrypted password entries with optional username and note
-- Uses AES-256-CBC encryption with PBKDF2 (200,000 iterations)
-- Secure metadata: creation timestamp, label, optional note
-- Strong lockout policy on repeated failed login attempts
-- Integrity verification via HMAC (SHA-256)
-- Backup the entire vault into a ZIP archive
-- Fuzzy-search entries with fzf
-- Audit saved entries with modification times and notes
-
----
+* **Password Storage**: Securely store passwords and related information in encrypted files.
+* **Master Password**: Passwords are encrypted using a master password, ensuring that only the user can access their vault.
+* **Password Breach Check**: Before saving a password, VaultX will ask if you would like to check the password against the **Have I Been Pwned** (HIBP) database to ensure it hasn't been compromised in a breach. The password check will **not** be done automatically; it requires user confirmation to proceed.
+* **Clipboard Support**: Copy passwords to the clipboard (with automatic expiration after 30 seconds).
+* **ASCII QR Code**: Display passwords as an ASCII QR code for quick access on other devices.
+* **Timeout Mechanism**: Session timeout to automatically log out after a period of inactivity.
+* **Lockout Mechanism**: Prevent brute force attacks by locking the vault after a specified number of failed attempts.
+* **Vault Backup**: Create encrypted backups of your vault.
+* **Entry Audit**: Audit existing vault entries and view basic details such as modification time and notes.
 
 ## Requirements
 
-- bash (v4 or later)
-- openssl
-- zip
-- fzf
-- htpasswd (from apache2-utils or similar)
-- (Optional) sudo or doas for remounting in vaultx for /proc safety.
-  (Is only required if there is danger.)
-- (Optional) wl-clip or xclip
-- (Optional) qrencode to display qr-code in terminal to share it with your mobile device.
+* **Bash** (version 4.0 or above)
+* **openssl** for AES-256-CBC encryption
+* **htpasswd** for password hashing
+* **curl** (optional, for HIBP breach check)
+* **fzf** for fuzzy searching entries (optional)
+* **xclip** or **wl-copy** for clipboard functionality (optional)
+* **qrencode** for generating ASCII QR codes (optional)
 
----
+## Installation
 
-## Setup
+1. Clone the repository or download the script file `vaultx.sh`.
 
-Make the script executable and run it:
+   ```bash
+   git clone https://github.com/yourusername/vaultx.git
+   cd vaultx
+   ```
 
-```bash
-chmod +x pash.sh
-./pash.sh
-```
+2. Make the script executable:
 
-To use a custom vault directory, set the environment variable:
+   ```bash
+   chmod +x vaultx.sh
+   ```
 
-```bash
-export VAULT_DIR="$HOME/.myvault"
-```
+3. Create a configuration file at `$HOME/.config/vaultx/config.env` (optional but recommended).
 
----
+   Example:
+
+   ```bash
+   VAULT_DIR="$HOME/.vaultx"
+   PASSWORD_LENGTH=24
+   BACKUP_DIR="$HOME/vault_backups"
+   ```
+
+4. Run the script:
+
+   ```bash
+   ./vaultx.sh
+   ```
 
 ## Usage
 
-Launch the script and select an action from the interactive fzf menu:
+When you run the script, it will prompt you with a menu of options to choose from. Below are the key features and how to use them:
 
-- Save new entry: create an encrypted entry with password, optional username, and optional note  
-- Decrypt entry: view stored credentials securely  
-- Delete entry: permanently remove an entry  
-- Backup vault: archive the entire vault folder as a ZIP file  
-- Audit vault: display saved entries with timestamps and note previews  
-- Exit: close the script  
+### 1. **Save New Entry**
 
----
+* Create a new password entry in the vault.
+* You will be prompted to enter a name, username (optional), and password.
+* Passwords can be generated or entered manually.
+* **Breach Check**: Before saving the password, VaultX will ask if you want to check the password against the **Have I Been Pwned** (HIBP) database. If the password has been involved in a breach, the script will notify you. However, the breach check **does not happen automatically**. It requires explicit user confirmation to proceed with the check.
+* Once saved, the password and associated username are encrypted with your master password.
 
-## Security Notes
+### 2. **Decrypt Entry**
 
-- **File Permissions**: A strict `umask 077` ensures that new files are only accessible by the owner, reducing exposure of sensitive data.
+* Decrypt a password entry from the vault.
+* Select the entry using `fzf` (a fuzzy search tool).
+* You can choose to display the password, copy it to the clipboard, or display it as an ASCII QR code.
+* If you want, you can also check if the password has been leaked, against the **Have I Been Pwned** (HIBP) database.
 
-- **/proc Protection**: Checks the visibility of file descriptors:
-  ```bash
-  perms=$(stat -Lc "%a" /proc/self/fd)
-  if (( ${perms: -1} )); then
-    echo "WARNING: /proc/self/fd is world-readable!" >&2
-  fi 
-  
-- If sudo or doas is installed, it will be remonuted.
-- Master password is hashed and verified with htpasswd -B; only the hash is stored  
-- Password data is encrypted using OpenSSL (aes-256-cbc) with salt and key stretching  
-- Sensitive variables are wiped from memory using secure_unset()  
-- Integrity is validated using per-entry HMACs (SHA-256 with OpenSSL)  
-- Timeouts and lockout mechanism protect against brute-force attacks  
+### 3. **Delete Entry**
 
----
+* Delete an existing entry from the vault.
+* After selecting an entry, you will be asked for confirmation before deletion.
+* The associated password, HMAC, and note files will be removed.
 
-## Roadmap
+### 4. **Backup Vault**
 
-Future enhancements may include:
+* Create an encrypted backup of your vault directory.
+* The backup is saved as a `.zip` file in the backup directory.
 
-- argon2 hash
-- Sync and export of vaults via Git, GitHub, or GitLab  
+### 5. **Audit Vault**
 
----
+* List all vault entries and show basic information (such as the label, last modified time, and optional notes).
+
+### 6. **Exit**
+
+* Exit the script.
+
+## Security Considerations
+
+### Master Password
+
+* The **master password** is used to encrypt and decrypt all stored passwords. Ensure that you choose a strong master password and do not forget it.
+* The script does not store the master password in memory after it is used, reducing the risk of leaking it.
+
+### Encryption
+
+* Passwords are encrypted using **AES-256-CBC** with a key derived from the master password using PBKDF2, which is a secure key derivation function.
+* The **HMAC (Hash-based Message Authentication Code)** is used to verify the integrity of the stored password entries.
+
+### Session Timeout
+
+* A session timeout mechanism is implemented. If the script is inactive for a specified duration, the session will automatically be logged out.
+* The timeout duration is configurable via the `$TMOUT` variable.
+
+### Lockout Mechanism
+
+* After a certain number of failed login attempts, the script will lock the vault for a specified duration to prevent brute force attacks.
+
+### Breach Check
+
+* When saving a password, VaultX will ask you whether you want to check the password against the **Have I Been Pwned** (HIBP) database.
+* If you choose to check, VaultX will query the HIBP API and notify you if the password has been involved in any known data breaches.
+* The breach check is **not automatic**; you will be prompted for confirmation before the check is performed.
+
+## Configuration
+
+VaultX can be configured using a configuration file located at `$HOME/.config/vaultx/config.env`. This file allows you to set various parameters such as:
+
+* `VAULT_DIR`: Directory where the vault will be stored.
+* `PASSWORD_LENGTH`: Default length for generated passwords.
+* `BACKUP_DIR`: Directory for storing vault backups.
+* `MAX_ATTEMPTS`: Maximum number of failed login attempts before locking the vault.
+* `LOCKOUT_DURATION`: Duration (in seconds) of the lockout after exceeding the maximum failed attempts.
+
+Example:
+
+```bash
+VAULT_DIR="$HOME/.vaultx"
+PASSWORD_LENGTH=24
+BACKUP_DIR="$HOME/vault_backups"
+MAX_ATTEMPTS=5
+LOCKOUT_DURATION=600
+```
 
 ## License
 
-Licensed under the GNU General Public License v3.0 (https://www.gnu.org/licenses/gpl-3.0.html)
+This script is licensed under the **GPL-3.0 License**.
+
+---
+
+This version of the README now has the spelling and grammar fixed. Let me know if you need further adjustments!
