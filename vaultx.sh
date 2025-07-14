@@ -5,13 +5,16 @@ umask 077
 # Load config
 CONFIG_FILE="$HOME/.config/vaultx/config.env"
 if [[ -f "$CONFIG_FILE" ]]; then
+  # shellcheck disable=SC1090
   source "$CONFIG_FILE"
+
 else
   echo "No config file found at $CONFIG_FILE. Using defaults." >&2
 fi
 
 VAULT="${VAULT_DIR:-vault}"
 PASSWORD_LENGTH="${PASSWORD_LENGTH:-24}"
+PASSWORD_COST="${PASSWORD_COST:-16}" 
 
 # Escalation tool detection
 if command -v doas &>/dev/null; then ESC_CMD="doas"
@@ -173,7 +176,7 @@ prompt_and_verify_password() {
   echo
 
   if [[ ! -f "$MASTER_HASH_FILE" ]]; then
-    HASHED=$(htpasswd -nbB dummy "$MASTER" | cut -d: -f2)
+    HASHED=$(htpasswd -nbB -C "$PASSWORD_COST" dummy "$MASTER" | cut -d: -f2)
     echo "$HASHED" > "$MASTER_HASH_FILE"
     echo "Master password initialized successfully." >&2
     rm -f "$FAIL_COUNT_FILE" "$LAST_FAIL_FILE"
@@ -184,7 +187,7 @@ prompt_and_verify_password() {
   STORED_HASH=$(<"$MASTER_HASH_FILE")
   printf 'dummy:%s\n' "$STORED_HASH" > "$tmp"
 
-  if htpasswd -vbB "$tmp" dummy "$MASTER" &>/dev/null; then
+  if htpasswd -vbB -C "$PASSWORD_COST" "$tmp" dummy "$MASTER" &>/dev/null; then
     rm -f "$tmp" "$FAIL_COUNT_FILE" "$LAST_FAIL_FILE"
     return 0
   else
@@ -220,7 +223,7 @@ display_ascii_qr_temp() {
 # Check password against Have I Been Pwned API
 check_pwned_password() {
   local password="$1"
-  local sha1hash prefix suffix response line hash count
+  local sha1hash prefix suffix response line hash
 
   # SHA1 hash in uppercase
   sha1hash=$(printf '%s' "$password" | sha1sum | awk '{print toupper($1)}')
