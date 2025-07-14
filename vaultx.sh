@@ -2,12 +2,18 @@
 set -euo pipefail
 umask 077
 
-# Load config
+HOME="${HOME:-$(getent passwd "$(id -u -n)" | cut -d: -f6)}"
 CONFIG_FILE="$HOME/.config/vaultx/config.env"
+
+# Load config
 if [[ -f "$CONFIG_FILE" ]]; then
+  perms=$(stat -c "%a" "$CONFIG_FILE")
+  if [[ "$perms" != "600" ]]; then
+    echo "WARNING: $CONFIG_FILE has permissions $perms. Setting to 600." >&2
+    chmod 600 "$CONFIG_FILE"
+  fi
   # shellcheck disable=SC1090
   source "$CONFIG_FILE"
-
 else
   echo "No config file found at $CONFIG_FILE. Using defaults." >&2
 fi
@@ -47,12 +53,49 @@ MASTER="" HASHED="" STORED_HASH=""
 pw="" pw2="" username="" note=""
 name="" selected="" action=""
 
-# Vault configuration
-MASTER_HASH_FILE="$VAULT/.master_hash"
-FAIL_COUNT_FILE="$VAULT/.fail_count"
-LAST_FAIL_FILE="$VAULT/.last_fail"
-mkdir -p "$VAULT"
-chmod 700 "$VAULT"
+select_vault() {
+  mkdir -p "$HOME/.vault"
+  cd "$HOME/.vault" || exit 1
+
+  # List all existing vaults
+  vaults=$(find . -maxdepth 1 -mindepth 1 -type d | sed 's|^\./||' | sort)
+
+  # If no vaults exist, create "default"
+  if [[ -z "$vaults" ]]; then
+    echo "No vault found. Creating 'default'..."
+    mkdir -p "$HOME/.vault/default"
+    chmod 700 "$HOME/.vault/default"
+    vault_choice="default"
+  else
+    # Let the user choose or create a new vault
+    vault_choice=$(printf "%s\n" $vaults "Create new vault" | fzf --prompt="Select vault: ")
+
+    if [[ -z "$vault_choice" ]]; then
+      echo "No selection made." >&2
+      exit 1
+    fi
+
+    if [[ "$vault_choice" == "Create new vault" ]]; then
+      read -r -p "Enter name for new vault (letters, numbers, _ or -): " new_vault
+      if [[ -z "$new_vault" || ! "$new_vault" =~ ^[A-Za-z0-9_-]+$ ]]; then
+        echo "Invalid vault name." >&2
+        exit 1
+      fi
+      vault_choice="$new_vault"
+      mkdir -p "$HOME/.vault/$vault_choice"
+      chmod 700 "$HOME/.vault/$vault_choice"
+      echo "Vault '$vault_choice' created successfully."
+    fi
+  fi
+
+  # Set vault paths for the selected or created vault
+  VAULT_DIR="$HOME/.vault/$vault_choice"
+  MASTER_HASH_FILE="$VAULT_DIR/.master_hash"
+  FAIL_COUNT_FILE="$VAULT_DIR/.fail_count"
+  LAST_FAIL_FILE="$VAULT_DIR/.last_fail"
+}
+
+select_vault
 
 # Secure temp dir
 TMP_DIR=$(mktemp -d -p "$VAULT" vaultx-tmp.XXXXXX)
@@ -169,16 +212,17 @@ prompt_and_verify_password() {
     fi
   fi
 
-  if ! read -t 60 -s -r -p "Master password (timeout 60s): " MASTER; then
+  if ! read -t 60 -s -r -p "Master password for '$vault_choice' vault (timeout 60s): " MASTER; then
     echo -e "\nTimeout or no input. Aborting." >&2
     return 1
   fi
   echo
 
+  # Überprüfen des Master-Passworts
   if [[ ! -f "$MASTER_HASH_FILE" ]]; then
     HASHED=$(htpasswd -nbB -C "$PASSWORD_COST" dummy "$MASTER" | cut -d: -f2)
     echo "$HASHED" > "$MASTER_HASH_FILE"
-    echo "Master password initialized successfully." >&2
+    echo "Master password initialized successfully for '$vault_choice'." >&2
     rm -f "$FAIL_COUNT_FILE" "$LAST_FAIL_FILE"
     return 0
   fi
@@ -187,6 +231,7 @@ prompt_and_verify_password() {
   STORED_HASH=$(<"$MASTER_HASH_FILE")
   printf 'dummy:%s\n' "$STORED_HASH" > "$tmp"
 
+  # Überprüfen des eingegebenen Master-Passworts
   if htpasswd -vbB -C "$PASSWORD_COST" "$tmp" dummy "$MASTER" &>/dev/null; then
     rm -f "$tmp" "$FAIL_COUNT_FILE" "$LAST_FAIL_FILE"
     return 0
@@ -201,12 +246,11 @@ prompt_and_verify_password() {
     backoff=$(( fails * 2 ))
     (( backoff > LOCKOUT_DURATION )) && backoff=$LOCKOUT_DURATION
     sleep "$backoff"
-    echo "Invalid master password. Attempt $fails of $MAX_ATTEMPTS." >&2
+    echo "Invalid master password for '$vault_choice'. Attempt $fails of $MAX_ATTEMPTS." >&2
     return 1
   fi
 }
 
-# Display ASCII QR Code temporarily
 display_ascii_qr_temp() {
   local secret="$1"
   if command -v qrencode &>/dev/null; then
@@ -254,40 +298,37 @@ check_pwned_password() {
 
 # Save new entry to vault
 save_new_entry() {
-  read -t 30 -r -p "Entry name (e.g. github) [timeout 30s]: " name \
-    || { echo -e "\nTimeout reached." >&2; exit 1; }
+  # Master-Passwort Abfrage und Validierung
+  if ! prompt_and_verify_password; then
+    echo "Master password verification failed. Exiting..." >&2
+    exit 1
+  fi
+
+  read -t 30 -r -p "Entry name for '$vault_choice' vault (e.g. github) [timeout 30s]: " name || { echo -e "\nTimeout reached." >&2; exit 1; }
   [[ -z "$name" || ! "$name" =~ ^[A-Za-z0-9._-]+$ ]] \
     && { echo "Invalid entry name." >&2; exit 1; }
 
-  # Ensure entry name is unique
-  vault_file="$VAULT/$name.bin"
+  # Sicherstellen, dass der Name eindeutig ist
+  vault_file="$VAULT_DIR/$name.bin"
   counter=2
   while [[ -f "$vault_file" ]]; do
-    vault_file="$VAULT/$name-$counter.bin"
+    vault_file="$VAULT_DIR/$name-$counter.bin"
     name="$name-$counter"
     ((counter++))
   done
 
-  vault_root=$(realpath -m "$VAULT")
+  # Vault Verzeichnis Pfad validieren
+  vault_root=$(realpath -m "$VAULT_DIR")
   [[ "$(realpath -m "$vault_file")" != "$vault_root/"* ]] \
     && { echo "Invalid path." >&2; exit 1; }
 
+  # Benutzername Eingabe
   read -t 30 -r -p "Username (optional) [timeout 30s]: " username || username=""
 
-  # Generate and validate password
+  # Passwort erzeugen
   pw=$(generate_password_prompt) || exit 1
 
-  # Check if the password is breached before saving
-  if ! check_pwned_password "$pw"; then
-    echo "Password is compromised in a data breach. Please choose another one." >&2
-    secure_unset
-    return 1  # Exit if password is breached
-  fi
-
-  # Prompt for and verify master password
-  prompt_and_verify_password || exit 1
-
-  # Save the password entry
+  # Speichern des Passworts in verschlüsseltem Format
   {
     [[ -n "$username" ]] && printf "Username: %s\n" "$username"
     printf "Password: %s\n" "$pw"
@@ -297,25 +338,13 @@ save_new_entry() {
   hmac=$(openssl dgst -sha256 -mac HMAC \
     -macopt key:file:/dev/fd/3 "$vault_file" 3<<<"$MASTER" \
     | awk '{print $2}')
-  echo "$hmac  $(basename "$vault_file")" > "$VAULT/$name.hmac"
+  echo "$hmac  $(basename "$vault_file")" > "$VAULT_DIR/$name.hmac"
 
   secure_unset
-
-  # Optional note
-  read -t 60 -r -p "Optional note [timeout 60s]: " note || note=""
-  timestamp=$(date +"%Y-%m-%d %H:%M:%S")
-  {
-    echo "Label: $name"
-    echo "Created: $timestamp"
-    echo "Note: $note"
-  } > "$VAULT/$name.note"
-  chmod 600 "$VAULT/$name.note"
-
-  echo "Saved entry '$name' with HMAC."
 }
 
 decrypt_entry() {
-  selected=$(find "$VAULT" -maxdepth 1 -type f -name "*.bin" \
+  selected=$(find "$VAULT_DIR" -maxdepth 1 -type f -name "*.bin" \
       | fzf --prompt="Select entry to decrypt: ")
   [[ -z "$selected" ]] && echo "Cancelled." >&2 && exit 1
 
@@ -384,7 +413,6 @@ decrypt_entry() {
   secure_unset
 }
 
-
 # Delete an entry
 delete_entry() {
   selected=$(find "$VAULT" -maxdepth 1 -type f -name "*.bin" \
@@ -399,25 +427,24 @@ delete_entry() {
       echo "Operation cancelled."
   fi
 }
-
-# Backup the vault
+# Backup des ausgewählten Vaults
 backup_vault() {
   ts=$(date +"%Y%m%d-%H%M%S")
-  backup="${BACKUP_DIR:-$HOME}/vault-backup-$ts.zip"
-  zip -rq "$backup" "$VAULT"
+  backup="${BACKUP_DIR:-$HOME}/vault-backup-$vault_choice-$ts.zip"
+  zip -rq "$backup" "$VAULT_DIR"
   chmod 600 "$backup"
-  echo "Vault backup saved to $backup."
+  echo "Backup für Vault '$vault_choice' gespeichert unter $backup."
 }
 
-# Audit vault contents
+# Audit des ausgewählten Vaults
 audit_vault() {
-  echo "Listing vault contents:"
-  find "$VAULT" -maxdepth 1 -name "*.bin" | while read -r entry; do
+  echo "Listing contents of '$vault_choice' vault:"
+  find "$VAULT_DIR" -maxdepth 1 -name "*.bin" | while read -r entry; do
     label=$(basename "$entry" .bin)
     modified=$(stat -c '%y' "$entry")
     echo "- $label (last modified: $modified)"
-    [[ -f "$VAULT/$label.note" ]] \
-      && head -n3 "$VAULT/$label.note" | sed 's/^/    /'
+    [[ -f "$VAULT_DIR/$label.note" ]] \
+      && head -n3 "$VAULT_DIR/$label.note" | sed 's/^/    /'
   done
 }
 
