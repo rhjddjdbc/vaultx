@@ -296,7 +296,6 @@ check_pwned_password() {
 
 # Save new entry to vault
 save_new_entry() {
-  # Master-Passwort Abfrage und Validierung
   if ! prompt_and_verify_password; then
     echo "Master password verification failed. Exiting..." >&2
     exit 1
