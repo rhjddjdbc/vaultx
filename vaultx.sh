@@ -218,7 +218,6 @@ prompt_and_verify_password() {
   fi
   echo
 
-  # Überprüfen des Master-Passworts
   if [[ ! -f "$MASTER_HASH_FILE" ]]; then
     HASHED=$(htpasswd -nbB -C "$PASSWORD_COST" dummy "$MASTER" | cut -d: -f2)
     echo "$HASHED" > "$MASTER_HASH_FILE"
@@ -231,7 +230,6 @@ prompt_and_verify_password() {
   STORED_HASH=$(<"$MASTER_HASH_FILE")
   printf 'dummy:%s\n' "$STORED_HASH" > "$tmp"
 
-  # Überprüfen des eingegebenen Master-Passworts
   if htpasswd -vbB -C "$PASSWORD_COST" "$tmp" dummy "$MASTER" &>/dev/null; then
     rm -f "$tmp" "$FAIL_COUNT_FILE" "$LAST_FAIL_FILE"
     return 0
@@ -308,7 +306,6 @@ save_new_entry() {
   [[ -z "$name" || ! "$name" =~ ^[A-Za-z0-9._-]+$ ]] \
     && { echo "Invalid entry name." >&2; exit 1; }
 
-  # Sicherstellen, dass der Name eindeutig ist
   vault_file="$VAULT_DIR/$name.bin"
   counter=2
   while [[ -f "$vault_file" ]]; do
@@ -317,18 +314,14 @@ save_new_entry() {
     ((counter++))
   done
 
-  # Vault Verzeichnis Pfad validieren
   vault_root=$(realpath -m "$VAULT_DIR")
   [[ "$(realpath -m "$vault_file")" != "$vault_root/"* ]] \
     && { echo "Invalid path." >&2; exit 1; }
 
-  # Benutzername Eingabe
   read -t 30 -r -p "Username (optional) [timeout 30s]: " username || username=""
 
-  # Passwort erzeugen
   pw=$(generate_password_prompt) || exit 1
-
-  # Speichern des Passworts in verschlüsseltem Format
+  
   {
     [[ -n "$username" ]] && printf "Username: %s\n" "$username"
     printf "Password: %s\n" "$pw"
@@ -427,7 +420,7 @@ delete_entry() {
       echo "Operation cancelled."
   fi
 }
-# Backup des ausgewählten Vaults
+
 backup_vault() {
   ts=$(date +"%Y%m%d-%H%M%S")
   backup="${BACKUP_DIR:-$HOME}/vault-backup-$vault_choice-$ts.zip"
@@ -436,7 +429,7 @@ backup_vault() {
   echo "Backup für Vault '$vault_choice' gespeichert unter $backup."
 }
 
-# Audit des ausgewählten Vaults
+
 audit_vault() {
   echo "Listing contents of '$vault_choice' vault:"
   find "$VAULT_DIR" -maxdepth 1 -name "*.bin" | while read -r entry; do
