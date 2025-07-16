@@ -1,6 +1,7 @@
-#!/bin/bash
+!/bin/bash
 set -euo pipefail
 umask 077
+NEW_VAULT_CREATED=false
 
 HOME="${HOME:-$(getent passwd "$(id -u -n)" | cut -d: -f6)}"
 CONFIG_FILE="$HOME/.config/vaultx/config.env"
@@ -85,6 +86,7 @@ select_vault() {
       mkdir -p "$HOME/.vault/$vault_choice"
       chmod 700 "$HOME/.vault/$vault_choice"
       echo "Vault '$vault_choice' created successfully."
+      NEW_VAULT_CREATED=true
     fi
   fi
 
@@ -134,64 +136,74 @@ hash_equals() {
   (( res == 0 ))
 }
 
-# Clipboard helper
 copy_to_clipboard() {
-  local timeout=30
-  if command -v wl-copy &>/dev/null; then
-    echo "$1" | wl-copy
-    echo "Copied to clipboard using wl-copy. It will be cleared in $timeout seconds." >&2
-    ( sleep "$timeout" && wl-copy < /dev/null ) &
-  elif command -v xclip &>/dev/null; then
-    echo "$1" | xclip -selection clipboard
-    echo "Copied to clipboard using xclip. It will be cleared in $timeout seconds." >&2
-    ( sleep "$timeout" && echo -n | xclip -selection clipboard ) &
-  else
-    echo "No clipboard tool found. Install wl-clipboard or xclip." >&2
-  fi
+    local timeout=30
+
+    if command -v wl-copy &>/dev/null; then
+        echo "$1" | wl-copy
+        echo "Copied to clipboard using wl-copy. It will be cleared in $timeout seconds." >&2
+        # Hintergrund-Job zum Clipboard löschen
+        ( sleep "$timeout" && wl-copy < /dev/null ) >/dev/null 2>&1 &
+    elif command -v xclip &>/dev/null; then
+        echo "$1" | xclip -selection clipboard
+        echo "Copied to clipboard using xclip. It will be cleared in $timeout seconds." >&2
+        # Hintergrund-Job zum Clipboard löschen
+        ( sleep "$timeout" && echo -n | xclip -selection clipboard ) >/dev/null 2>&1 &
+    else
+        echo "No clipboard tool found. Install wl-clipboard or xclip." >&2
+    fi
 }
 
 # Generate password prompt
 generate_password_prompt() {
   local choice pw copy_choice custom_len
   choice=$(printf "%s\n" "Enter manually" "Generate secure password" | fzf --prompt="Choose password method: ")
+
   case "$choice" in
-"Enter manually")
-  read -t 60 -s -r -p "Password (timeout 60s): " pw; echo >&2
-  read -t 60 -s -r -p "Repeat password (timeout 60s): " pw2; echo >&2
+    "Enter manually")
+      read -t 60 -s -r -p "Password (timeout 60s): " pw; echo >&2
+      read -t 60 -s -r -p "Repeat password (timeout 60s): " pw2; echo >&2
 
-  # Check if passwords match
-  if [[ "$pw" != "$pw2" ]]; then
-    echo "Passwords do not match." >&2
-    return 1
-  fi
+      if [[ "$pw" != "$pw2" ]]; then
+        echo "Passwords do not match." >&2
+        return 1
+      fi
 
-  if [[ -z "$pw" ]]; then
-    echo "Empty password not allowed." >&2
-    return 1
-  fi
+      if [[ -z "$pw" ]]; then
+        echo "Empty password not allowed." >&2
+        return 1
+      fi
 
-  # Ask user if they want to check the password with HIBP
-  read -r -p "Do you want to check if this password has appeared in data breaches? [y/N]: " check_choice
-  if [[ "$check_choice" =~ ^[Yy]$ ]]; then
-    if ! check_pwned_password "$pw"; then
-      return 1
-    fi
-  fi
+      read -r -p "Do you want to check if this password has appeared in data breaches? [y/N]: " check_choice
+      if [[ "$check_choice" =~ ^[Yy]$ ]]; then
+        if ! check_pwned_password "$pw"; then
+          return 1
+        fi
+      fi
 
-  printf '%s' "$pw"
-  ;;
+      printf '%s' "$pw"
+      ;;
 
-  "Generate secure password")
+    "Generate secure password")
       read -r -p "Desired password length (default: $PASSWORD_LENGTH): " custom_len
       custom_len="${custom_len:-$PASSWORD_LENGTH}"
-      pw=$(openssl rand -base64 "$custom_len")
+
+      if ! [[ "$custom_len" =~ ^[0-9]+$ ]]; then
+        echo "Invalid length input." >&2
+        return 1
+      fi
+
+      pw=$(LC_ALL=C tr -dc 'A-Za-z0-9@#%&+=_' </dev/urandom | head -c "$custom_len")
       echo "Generated password: $pw" >&2
+
       read -r -p "Copy generated password to clipboard? [y/N]: " copy_choice
       if [[ "$copy_choice" =~ ^[Yy]$ ]]; then
         copy_to_clipboard "$pw"
       fi
+
       printf '%s' "$pw"
       ;;
+
     *)
       echo "No selection made." >&2
       return 1
@@ -405,6 +417,53 @@ decrypt_entry() {
   secure_unset
 }
 
+edit_entry() {
+    selected=$(find "$VAULT_DIR" -maxdepth 1 -type f -name "*.bin" \
+        | fzf --prompt="Select entry to edit: ")
+    [[ -z "$selected" ]] && echo "Cancelled." >&2 && return
+
+    file="$selected"
+    name=$(basename "$file" .bin)
+
+    if ! prompt_and_verify_password; then
+        echo "Master password verification failed." >&2
+        return
+    fi
+
+    # Decrypt the selected entry
+    decrypted=$(openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+        -in "$file" -pass fd:3 3<<<"$MASTER") || {
+            echo "Failed to decrypt entry." >&2
+            secure_unset
+            return
+        }
+
+    current_user=$(printf '%s\n' "$decrypted" | awk -F': ' '/^Username:/ { print $2 }')
+    current_pass=$(printf '%s\n' "$decrypted" | awk -F': ' '/^Password:/ { print $2 }')
+
+    read -r -p "Update username (leave blank to keep current: '$current_user'): " username
+    [[ -z "$username" ]] && username="$current_user"
+
+    echo "Update password:"
+    pw=$(generate_password_prompt) || return
+
+    # Re-encrypt the updated data
+    {
+        [[ -n "$username" ]] && printf "Username: %s\n" "$username"
+        printf "Password: %s\n" "$pw"
+    } | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
+        -out "$file" -pass fd:3 3<<<"$MASTER"
+
+    # Recalculate HMAC
+    hmac=$(openssl dgst -sha256 -mac HMAC \
+        -macopt key:file:/dev/fd/3 "$file" 3<<<"$MASTER" \
+        | awk '{print $2}')
+    echo "$hmac  $(basename "$file")" > "$VAULT_DIR/$name.hmac"
+
+    echo "Entry '$name' successfully updated."
+    secure_unset
+}
+
 # Delete an entry
 delete_entry() {
   selected=$(find "$VAULT" -maxdepth 1 -type f -name "*.bin" \
@@ -435,21 +494,28 @@ audit_vault() {
     label=$(basename "$entry" .bin)
     modified=$(stat -c '%y' "$entry")
     echo "- $label (last modified: $modified)"
-    [[ -f "$VAULT_DIR/$label.note" ]] \
-      && head -n3 "$VAULT_DIR/$label.note" | sed 's/^/    /'
   done
 }
 
 # Main menu
 main_menu() {
+  if [[ "$NEW_VAULT_CREATED" == true ]]; then
+    echo "New vault created. Please add your first entry."
+    save_new_entry
+    echo "First entry saved. Exiting now."
+    exit 0
+  fi
+
   action=$(printf "%s\n" \
     "Save new entry" \
     "Decrypt entry" \
+    "Edit existing entry" \
     "Delete entry" \
     "Backup vault" \
     "Audit vault" \
     "Exit" \
   | fzf --prompt="Select action: ")
+  
   [[ -z "$action" ]] && echo "No action selected." >&2 && exit 1
 
   case "$action" in
@@ -458,6 +524,9 @@ main_menu() {
       ;;
     "Decrypt entry")
       decrypt_entry
+      ;;
+    "Edit existing entry")
+      edit_entry
       ;;
     "Delete entry")
       delete_entry
