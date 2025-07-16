@@ -1,4 +1,4 @@
-!/bin/bash
+#!/bin/bash
 set -euo pipefail
 umask 077
 NEW_VAULT_CREATED=false
