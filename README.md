@@ -98,7 +98,7 @@ At startup, VaultX prompts you to select or create a vault, then shows the main 
 
 4. **Delete Entry**
 
-   * Removes the `.bin`, `.hmac`, and `.note` files after confirmation
+   * Removes the `.bin` and `.hmac` files after confirmation
 
 5. **Backup Vault**
 
