@@ -41,7 +41,7 @@
 ## Installation
 
 ```bash
-git clone https://github.com/yourusername/vaultx.git
+git clone https://github.com/rhjddjdbc/vaultx.git
 cd vaultx
 chmod +x vaultx.sh
 ```
