@@ -121,7 +121,6 @@ At startup, VaultX prompts you to select or create a vault, then shows the main 
   ├── default/
   │   ├── github.bin
   │   ├── github.hmac
-  │   ├── github.note     (optional)
   │   ├── .master_hash
   │   ├── .fail_count
   │   └── .last_fail
