@@ -60,20 +60,21 @@ pw="" pw2="" username="" note=""
 name="" selected="" action=""
 
 select_vault() {
-  mkdir -p "$HOME/.vault"
-  cd "$HOME/.vault" || exit 1
+  mkdir -p "$VAULT_DIR"
+  cd "$VAULT_DIR" || exit 1
 
   # List all existing vaults
   vaults=$(find . -maxdepth 1 -mindepth 1 -type d | sed 's|^\./||' | sort)
 
-  # If no vaults exist, create "default"
+  # If no vaults exist, create 'default' automatically and select it
   if [[ -z "$vaults" ]]; then
     echo "No vault found. Creating 'default'..."
-    mkdir -p "$HOME/.vault/default"
-    chmod 700 "$HOME/.vault/default"
+    mkdir -p "$VAULT_DIR/default"
+    chmod 700 "$VAULT_DIR/default"
     vault_choice="default"
+    NEW_VAULT_CREATED=true
   else
-    # Let the user choose or create a new vault
+    # If vaults exist, present the selection menu
     vault_choice=$(printf "%s\n" $vaults "Create new vault" | fzf --prompt="Select vault: ")
 
     if [[ -z "$vault_choice" ]]; then
@@ -88,15 +89,15 @@ select_vault() {
         exit 1
       fi
       vault_choice="$new_vault"
-      mkdir -p "$HOME/.vault/$vault_choice"
-      chmod 700 "$HOME/.vault/$vault_choice"
+      mkdir -p "$VAULT_DIR/$vault_choice"
+      chmod 700 "$VAULT_DIR/$vault_choice"
       echo "Vault '$vault_choice' created successfully."
       NEW_VAULT_CREATED=true
     fi
   fi
 
   # Set vault paths for the selected or created vault
-  VAULT_DIR="$HOME/.vault/$vault_choice"
+  VAULT_DIR="$VAULT_DIR/$vault_choice"
   MASTER_HASH_FILE="$VAULT_DIR/.master_hash"
   FAIL_COUNT_FILE="$VAULT_DIR/.fail_count"
   LAST_FAIL_FILE="$VAULT_DIR/.last_fail"
