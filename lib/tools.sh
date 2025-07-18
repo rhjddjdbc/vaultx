@@ -17,12 +17,12 @@ copy_to_clipboard() {
     if command -v wl-copy &>/dev/null; then
         echo "$1" | wl-copy
         echo "Copied to clipboard using wl-copy. It will be cleared in $timeout seconds." >&2
-        # Hintergrund-Job zum Clipboard löschen
+        
         ( sleep "$timeout" && wl-copy < /dev/null ) >/dev/null 2>&1 &
     elif command -v xclip &>/dev/null; then
         echo "$1" | xclip -selection clipboard
         echo "Copied to clipboard using xclip. It will be cleared in $timeout seconds." >&2
-        # Hintergrund-Job zum Clipboard löschen
+        
         ( sleep "$timeout" && echo -n | xclip -selection clipboard ) >/dev/null 2>&1 &
     else
         echo "No clipboard tool found. Install wl-clipboard or xclip." >&2
