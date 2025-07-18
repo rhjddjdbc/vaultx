@@ -45,7 +45,7 @@ OpenSSL command to decrypt manually:
 
 openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -salt -a -in ${name}.bin -out ${name}.txt
 EOF
-
+chmod 600 "$VAULT_DIR/.${name}.meta"
   secure_unset
 }
 
