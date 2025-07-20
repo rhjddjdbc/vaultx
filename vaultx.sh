@@ -1,13 +1,45 @@
 #!/bin/bash
 set -euo pipefail
 umask 077
-SCRIPT_DIR=$(dirname "$(realpath "$0")")
-source "$SCRIPT_DIR/lib/option.sh"
-source "$SCRIPT_DIR/lib/pass.sh"
-source "$SCRIPT_DIR/lib/tools.sh"
 
-NEW_VAULT_CREATED=false
+# Secure variable unset with whitelist
+secure_unset() {
+  local var val len
+  local whitelist=(MASTER pw pw2 username)
 
+  for var in "${whitelist[@]}"; do
+    [[ "$var" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]] || continue
+    val="${!var:-}"
+    if [[ -n "$val" ]]; then
+      len="${#val}"
+      printf -v "$var" '%*s' "$len" ''
+      unset "$var"
+    fi
+  done
+
+  unset HASHED STORED_HASH
+}
+
+# Argument-Parsing
+CLI_MODE=false
+VAULT_CLI=""
+ACTION_CLI=""
+ENTRY_CLI=""
+USERNAME_CLI=""
+METHOD_CLI=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --cli) CLI_MODE=true ;;
+    -v|--vault) VAULT_CLI="$2"; shift ;;
+    -a|--action) ACTION_CLI="$2"; shift ;;
+    -e|--entry) ENTRY_CLI="$2"; shift ;;
+    -u|--username) USERNAME_CLI="$2"; shift ;;
+    -m|--method) METHOD_CLI="$2"; shift ;;   
+    *) echo "Unknown option: $1"; exit 1 ;;
+  esac
+  shift
+done
 HOME="${HOME:-$(getent passwd "$(id -u -n)" | cut -d: -f6)}"
 CONFIG_FILE="$HOME/.config/vaultx/config.env"
 
@@ -23,6 +55,22 @@ if [[ -f "$CONFIG_FILE" ]]; then
 else
   echo "No config file found at $CONFIG_FILE. Using defaults." >&2
 fi
+# Script-Setup
+SCRIPT_DIR=$(dirname "$(realpath "$0")")
+
+# Source libraries
+source "$SCRIPT_DIR/lib/option.sh"
+source "$SCRIPT_DIR/lib/pass.sh"
+source "$SCRIPT_DIR/lib/tools.sh"
+source "$SCRIPT_DIR/lib/cli.sh"
+
+# CLI-Mode start
+if [[ "$CLI_MODE" == true ]]; then
+  run_cli_mode
+  exit 0
+fi
+
+NEW_VAULT_CREATED=false
 
 VAULT="${VAULT_DIR:-vault}"
 PASSWORD_LENGTH="${PASSWORD_LENGTH:-24}"
@@ -104,6 +152,18 @@ select_vault() {
 }
 
 select_vault
+cat > "$VAULT_DIR/.backup.meta" << EOF
+Algorithm: aes-256-cbc
+PBKDF2 iterations: 200000
+Salted: yes
+Base64 encoded: yes
+Extension: .bin
+
+OpenSSL command to decrypt manually:
+
+openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -salt -a -in github.bin -out github.txt
+EOF
+chmod 600 "$VAULT_DIR/.backup.meta"
 
 # Secure temp dir
 TMP_DIR=$(mktemp -d -p "$VAULT" vaultx-tmp.XXXXXX)
@@ -112,25 +172,6 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 # Lockout policy
 MAX_ATTEMPTS=5
 LOCKOUT_DURATION=600
-
-# Secure variable unset with whitelist
-secure_unset() {
-  local var val len
-  local whitelist=(MASTER pw pw2 username)
-
-  for var in "${whitelist[@]}"; do
-    [[ "$var" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]] || continue
-    val="${!var:-}"
-    if [[ -n "$val" ]]; then
-      len="${#val}"
-      printf -v "$var" '%*s' "$len" ''
-      unset "$var"
-    fi
-  done
-
-  unset HASHED STORED_HASH
-}
-
 
 # Main menu
 main_menu() {
