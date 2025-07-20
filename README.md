@@ -61,10 +61,30 @@ nano ~/.config/vaultx/config.env
 Example `config.env`:
 
 ```bash
-VAULT_DIR="$HOME/.vaultx"
-PASSWORD_LENGTH=24
-PASSWORD_COST=16
-BACKUP_DIR="$HOME/vault_backups"
+# config.env
+###################################################
+#                                                 #
+#                            _ _                  #
+#          /\   /\__ _ _   _| | |___  __          #
+#          \ \ / / _` | | | | | __\ \/ /          #
+#           \ V / (_| | |_| | | |_ >  <           #
+#            \_/ \__,_|\__,_|_|\__/_/\_\          #
+#                                                 #
+#                   V A U L T X                   #
+#            Locked. Encrypted. Yours.            #
+#                                                 #
+###################################################
+# Base directories
+VAULT_DIR="$HOME/.vault"            # Directory where vaults are stored
+BACKUP_DIR="$HOME/vault_backups"    # Location for encrypted vault backups
+
+# Password options
+PASSWORD_LENGTH=24                  # Default length for generated passwords
+PASSWORD_COST=16                    # BCrypt cost factor for master hash strength
+
+# Security settings
+MAX_ATTEMPTS=5                      # Max allowed login attempts before lockout
+LOCKOUT_DURATION=600                # Duration of lockout in seconds after failures
 ```
 
 ---
