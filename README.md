@@ -48,6 +48,7 @@ chmod +x vaultx.sh
 chmod +x lib/pass.sh
 chmod +x lib/tools.sh
 chmod +x lib/option.sh
+chmod +x lib/cli.sh
 ```
 
 Optional: create a configuration file:
