@@ -18,6 +18,7 @@
 * **QR Code Export**: Display password as ASCII QR code directly in the terminal
 * **Brute-Force Protection**: Lockout mechanism with exponential backoff on repeated failures
 * **Secure Memory Cleanup**: Temporary variables are zeroed and unset after usage
+* **basic script/cli mode**: for add, get, delete
 
 ---
 
@@ -167,6 +168,72 @@ Located in `~/.config/vaultx/config.env`:
 
   * Uses SHA-1 k-anonymity: only the hash prefix is communicated
   * Completely optional; no password leaves the system unless explicitly requested
+
+---
+
+## CLI Mode Usage
+
+VaultX now supports a **CLI mode**, allowing you to perform essential operations (`add`, `get`, `delete`) via command-line flags without the need for interactive menus.
+
+### 1. **Add an Entry**
+
+To add a new entry (e.g., `github`) with a username and password:
+
+```bash
+./vaultx.sh --cli --vault default --action add --entry github --username your_username --password your_password
+```
+
+You can also generate a password automatically for the entry:
+
+```bash
+./vaultx.sh --cli --vault default --action add --entry github --username your_username --generate
+```
+
+---
+
+### 2. **Get an Entry**
+
+To retrieve an entry (e.g., `github`) and show the username and password:
+
+```bash
+./vaultx.sh --cli --vault default --action get --entry github
+```
+
+This command will prompt you for the master password and then show the username and password for the entry.
+
+---
+
+### 3. **Delete an Entry**
+
+To delete an entry (e.g., `github`):
+
+```bash
+./vaultx.sh --cli --vault default --action delete --entry github
+```
+
+This will securely remove the entry’s data from the vault.
+
+---
+
+## Example Usage Flow
+
+1. **Add an entry** (with manual username and password):
+
+   ```bash
+   ./vaultx.sh --cli --vault default --action add --entry github --username myuser --password mypassword
+   ```
+
+2. **Get the entry**:
+
+   ```bash
+   ./vaultx.sh --cli --vault default --action get --entry github
+   ```
+
+3. **Delete the entry**:
+
+   ```bash
+   ./vaultx.sh --cli --vault default --action delete --entry github
+   ```
 
 ---
 
