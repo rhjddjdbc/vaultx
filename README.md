@@ -29,12 +29,14 @@
 * `bash` ≥ 4.0
 * `openssl`
 * `htpasswd` (from `apache2-utils` or `httpd-tools`)
+
 **Optional tools:**
 
 * `xclip` or `wl-clipboard` (clipboard support)
 * `qrencode` (QR code rendering in the terminal)
 * `curl`
 * `fzf`
+  
 ---
 
 ## Installation
