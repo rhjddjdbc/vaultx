@@ -82,6 +82,11 @@ cli_get_entry() {
 
   [[ -n "$user" ]] && echo "Username: $user"
   echo "Password: $pass"
+
+  if [[ "$HIBP_CHECK_CLI" == "true" ]]; then
+     check_pwned_password "$pass"; 
+  fi
+
   secure_unset
 }
 
@@ -103,27 +108,32 @@ cli_delete_entry() {
   secure_unset
 }
 
-
-
 cli_password_input() {
   local method="$1"
-  local pw pw2 copy_choice custom_len
+  local pw copy_choice custom_len
 
   case "$method" in
     manual)
-      echo "Please enter the password (60 seconds timeout):"
-      read -t 60 -s -r -p "Password: " pw; echo
-      read -t 60 -s -r -p "Repeat password: " pw2; echo
-      if [[ "$pw" != "$pw2" ]]; then
-        echo "Passwords do not match." >&2
-        return 1
-      fi
+      # Prompt to stderr, read silently with 60s timeout
+      echo -n "Password [timeout 60s]: " >&2
+      read -s -r -t 60 pw
+      echo >&2
+
+      # Validate non-empty
       if [[ -z "$pw" ]]; then
         echo "Password cannot be empty." >&2
         return 1
       fi
+      if [[ "$HIBP_CHECK_CLI" == "true" ]]; then
+        if ! check_pwned_password "$pw"; then
+	    return 1
+        fi
+      fi
+
+      # Output only the password to stdout
       printf '%s' "$pw"
       ;;
+
     generate)
       custom_len="${PASSWORD_LENGTH:-24}"
       pw=$(LC_ALL=C tr -dc 'A-Za-z0-9@#%&+=_' </dev/urandom | head -c "$custom_len")
@@ -134,6 +144,7 @@ cli_password_input() {
       fi
       printf '%s' "$pw"
       ;;
+
     *)
       echo "Unknown method: $method" >&2
       return 1
