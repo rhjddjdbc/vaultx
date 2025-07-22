@@ -49,6 +49,7 @@ chmod +x lib/pass.sh
 chmod +x lib/tools.sh
 chmod +x lib/option.sh
 chmod +x lib/cli.sh
+chmod +x lib/vault.sh
 ```
 
 Optional: create a configuration file:
