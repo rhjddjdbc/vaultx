@@ -203,13 +203,13 @@ VaultX now supports a **CLI mode**, allowing you to perform essential operations
 To add a new entry (e.g., `github`) with a username and password:
 
 ```bash
-./vaultx.sh --cli --vault default --action add --entry github --username your_username --password your_password
+./vaultx.sh --cli --vault default --action add --entry github --username your_username --method manual
 ```
 
 You can also generate a password automatically for the entry:
 
 ```bash
-./vaultx.sh --cli --vault default --action add --entry github --username your_username --generate
+./vaultx.sh --cli --vault default --action add --entry github --username your_username --method generate
 ```
 
 ---
@@ -235,28 +235,6 @@ To delete an entry (e.g., `github`):
 ```
 
 This will securely remove the entry’s data from the vault.
-
----
-
-## Example Usage Flow
-
-1. **Add an entry** (with manual username and password):
-
-   ```bash
-   ./vaultx.sh --cli --vault default --action add --entry github --username myuser --password mypassword
-   ```
-
-2. **Get the entry**:
-
-   ```bash
-   ./vaultx.sh --cli --vault default --action get --entry github
-   ```
-
-3. **Delete the entry**:
-
-   ```bash
-   ./vaultx.sh --cli --vault default --action delete --entry github
-   ```
 
 ---
 
