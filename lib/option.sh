@@ -1,6 +1,9 @@
-#!/bin/bash 
+# lib/option.sh
 
-# Save new entry to vault
+############################################################
+# Save new entry to vault (with optional username)
+# Ensures unique name, encrypts, generates HMAC and metadata
+############################################################
 save_new_entry() {
   if ! prompt_and_verify_password; then
     echo "Master password verification failed. Exiting..." >&2
@@ -34,21 +37,13 @@ save_new_entry() {
 
   hmac=$(openssl dgst -sha256 -mac HMAC -macopt key:file:/dev/fd/3 "$vault_file" 3<<<"$MASTER" | awk '{print $2}')
   echo "$hmac  $(basename "$vault_file")" > "$VAULT_DIR/$name.hmac"
-  cat > "$VAULT_DIR/.${name}.meta" << EOF
-Algorithm: aes-256-cbc
-PBKDF2 iterations: 200000
-Salted: yes
-Base64 encoded: yes
-Extension: .bin
-
-OpenSSL command to decrypt manually:
-
-openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -salt -a -in ${name}.bin -out ${name}.txt
-EOF
-chmod 600 "$VAULT_DIR/.${name}.meta"
   secure_unset
 }
 
+###################################################################
+# Decrypt and view an entry
+# Uses HMAC for integrity check and shows password handling options
+###################################################################
 decrypt_entry() {
   selected=$(find "$VAULT_DIR" -maxdepth 1 -type f -name "*.bin" | fzf --prompt="Select entry to decrypt: ")
   [[ -z "$selected" ]] && echo "Cancelled." >&2 && exit 1
@@ -117,6 +112,9 @@ decrypt_entry() {
   secure_unset
 }
 
+######################################################
+# Edit an existing vault entry (username and password)
+######################################################
 edit_entry() {
   selected=$(find "$VAULT_DIR" -maxdepth 1 -type f -name "*.bin" | fzf --prompt="Select entry to edit: ")
   [[ -z "$selected" ]] && echo "Cancelled." >&2 && return
@@ -131,7 +129,7 @@ edit_entry() {
 
   tmpfile="/tmp/vault_plain_$$.txt"
 
-  # Decrypt ohne Header
+  # Decrypt entry to temp file (strips comment lines)
   grep -v '^#' "$file" | openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -salt -a -pass fd:3 3<<<"$MASTER" > "$tmpfile" || {
       echo "Failed to decrypt entry." >&2
       rm -f "$tmpfile"
@@ -163,21 +161,27 @@ edit_entry() {
   secure_unset
 }
 
-# Delete an entry
+################################
+# Delete an entry from the vault
+################################
 delete_entry() {
-  selected=$(find "$VAULT" -maxdepth 1 -type f -name "*.bin" \
+  selected=$(find "$VAULT_DIR" -maxdepth 1 -type f -name "*.bin" \
       | fzf --prompt="Select entry to delete: ")
   [[ -z "$selected" ]] && echo "Cancelled." >&2 && exit 1
 
   read -t 30 -r -p "Delete '$(basename "$selected")'? [y/N]: " confirm
   if [[ "$confirm" =~ ^[yY]$ ]]; then
-      rm -f "$selected" "${selected%.bin}.hmac" "${selected%.bin}.note"
+      rm -f "$selected" "${selected%.bin}.hmac" 
       echo "Entry deleted."
   else
       echo "Operation cancelled."
   fi
 }
 
+#########################################################
+# Create a ZIP archive backup of the current vault folder
+# Backup goes to BACKUP_DIR or falls back to $HOME
+#########################################################
 backup_vault() {
   ts=$(date +"%Y%m%d-%H%M%S")
   backup="${BACKUP_DIR:-$HOME}/vault-backup-$vault_choice-$ts.zip"
@@ -186,7 +190,9 @@ backup_vault() {
   echo "Backup für Vault '$vault_choice' gespeichert unter $backup."
 }
 
-
+#####################################################
+# Audit vault contents - list entries with timestamps
+#####################################################
 audit_vault() {
   echo "Listing contents of '$vault_choice' vault:"
   find "$VAULT_DIR" -maxdepth 1 -name "*.bin" | while read -r entry; do
@@ -195,5 +201,3 @@ audit_vault() {
     echo "- $label (last modified: $modified)"
   done
 }
-
-
