@@ -1,15 +1,30 @@
 # lib/cli_mode.sh
 
+#########################################
+# Entry point for CLI mode
+# Handles CLI args and dispatches actions
+#########################################
 run_cli_mode() {
-  TMP_DIR=$(mktemp -d -p "${VAULT_DIR:-/tmp}" vaultx-tmp.XXXXXX)
-  trap 'rm -rf "$TMP_DIR"' EXIT
   vault_choice="$VAULT_CLI"
   VAULT_DIR="${VAULT_DIR:-vault}/$vault_choice"
   MASTER_HASH_FILE="$VAULT_DIR/.master_hash"
   FAIL_COUNT_FILE="$VAULT_DIR/.fail_count"
   LAST_FAIL_FILE="$VAULT_DIR/.last_fail"
 
-  [[ ! -d "$VAULT_DIR" ]] && { echo "Vault '$vault_choice' not found."; exit 1; }
+  # Ensure the vault directory exists
+  if [[ ! -d "$VAULT_DIR" ]]; then
+    echo "Vault '$vault_choice' not found. Creating it now..."
+    mkdir -p "$VAULT_DIR" || { echo "Failed to create vault directory." >&2; exit 1; }
+    chmod 700 "$VAULT_DIR"
+  fi
+
+  # Now we can safely create the TMP_DIR inside it
+  TMP_DIR=$(mktemp -d -p "$VAULT_DIR" vaultx-tmp.XXXXXX) || {
+    echo "Failed to create temporary directory." >&2
+    exit 1
+  }
+  trap 'rm -rf "$TMP_DIR"' EXIT
+
   [[ -z "$ENTRY_CLI" ]] && { echo "Missing entry name (--entry/-e)." >&2; exit 1; }
   case "$ACTION_CLI" in
     add)
@@ -28,7 +43,9 @@ run_cli_mode() {
   esac
 }
 
-
+#########################################
+# Adds a new encrypted entry to the vault
+#########################################
 cli_add_entry() {
   if ! prompt_and_verify_password; then
     echo "Master password verification failed." >&2
@@ -54,7 +71,9 @@ cli_add_entry() {
   secure_unset
 }
 
-
+#####################################
+# Decrypts and displays a vault entry
+#####################################
 cli_get_entry() {
   file="$VAULT_DIR/$ENTRY_CLI.bin"
   [[ ! -f "$file" ]] && { echo "Entry '$ENTRY_CLI' not found." >&2; exit 1; }
@@ -90,7 +109,9 @@ cli_get_entry() {
   secure_unset
 }
 
-
+#############################################
+# Deletes an entry and related metadata files
+#############################################
 cli_delete_entry() {
   file="$VAULT_DIR/$ENTRY_CLI.bin"
   hmac="$VAULT_DIR/$ENTRY_CLI.hmac"
@@ -108,6 +129,9 @@ cli_delete_entry() {
   secure_unset
 }
 
+######################################################
+# Handles password input for CLI (manual or generated)
+######################################################
 cli_password_input() {
   local method="$1"
   local pw copy_choice custom_len
@@ -115,7 +139,7 @@ cli_password_input() {
   case "$method" in
     manual)
       # Prompt to stderr, read silently with 60s timeout
-      echo -n "Password [timeout 60s]: " >&2
+      echo -n "Password (timeout 60s): " >&2
       read -s -r -t 60 pw
       echo >&2
 
