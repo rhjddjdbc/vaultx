@@ -183,11 +183,11 @@ delete_entry() {
 # Backup goes to BACKUP_DIR or falls back to $HOME
 #########################################################
 backup_vault() {
-  ts=$(date +"%Y%m%d-%H%M%S")
-  backup="${BACKUP_DIR:-$HOME}/vault-backup-$vault_choice-$ts.zip"
+  ts=$(date +"%Y%m%d")
+  backup="${BACKUP_DIR:-$HOME}/$vault_choice-$ts.zip"
   zip -rq "$backup" "$VAULT_DIR"
   chmod 600 "$backup"
-  echo "Backup für Vault '$vault_choice' gespeichert unter $backup."
+  echo "Backup for vault '$vault_choice' saved at $backup."
 }
 
 #####################################################
