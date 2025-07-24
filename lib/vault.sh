@@ -1,3 +1,10 @@
+# lib/vault.sh
+
+#############################################################
+# Select or create a vault
+# Lists existing vaults, lets user choose or create a new one
+# Sets relevant vault paths and creates default if none exist
+#############################################################
 select_vault() {
   mkdir -p "$VAULT_DIR"
   cd "$VAULT_DIR" || exit 1
@@ -13,7 +20,7 @@ select_vault() {
     vault_choice="default"
     NEW_VAULT_CREATED=true
   else
-    # If vaults exist, present the selection menu
+    # If vaults exist, present the selection menu using fzf
     vault_choice=$(printf "%s\n" $vaults "Create new vault" | fzf --prompt="Select vault: ")
 
     if [[ -z "$vault_choice" ]]; then
@@ -21,6 +28,7 @@ select_vault() {
       exit 1
     fi
 
+    # Handle "Create new vault" selection from the menu
     if [[ "$vault_choice" == "Create new vault" ]]; then
       read -r -p "Enter name for new vault (letters, numbers, _ or -): " new_vault
       if [[ -z "$new_vault" || ! "$new_vault" =~ ^[A-Za-z0-9_-]+$ ]]; then
