@@ -1,6 +1,9 @@
-#!/bin/bash
+# lib/pass.sh
 
+########################################################################
 # Generate password prompt
+# Allows user to either enter password manually or generate a secure one
+########################################################################
 generate_password_prompt() {
   local choice pw copy_choice custom_len
   choice=$(printf "%s\n" "Enter manually" "Generate secure password" | fzf --prompt="Choose password method: ")
@@ -57,7 +60,10 @@ generate_password_prompt() {
   esac
 }
 
+##########################################################################
 # Prompt and verify master password
+# Handles lockout logic on repeated failures and compares hashed passwords
+##########################################################################
 prompt_and_verify_password() {
   if [[ -f $FAIL_COUNT_FILE && -f $LAST_FAIL_FILE ]]; then
     fails=$(<"$FAIL_COUNT_FILE")
@@ -107,7 +113,10 @@ prompt_and_verify_password() {
   fi
 }
 
-# Check password against Have I Been Pwned API
+########################################################################
+# Check password against Have I Been Pwned API (using K-Anonymity model)
+# Returns 1 if breached, 0 if clean or API unreachable
+########################################################################
 check_pwned_password() {
   local password="$1"
   local sha1hash prefix suffix response line hash
@@ -127,7 +136,6 @@ check_pwned_password() {
   # Check if the suffix appears in the response
   while read -r line; do
     hash=${line%%:*}
-#    count=${line##*:}
     if [[ "$hash" == "$suffix" ]]; then
        
        echo -e "\033[1;33mPassword got breached.\033[0m" >&2
@@ -137,4 +145,3 @@ check_pwned_password() {
 
   return 0  # return 0 if no issues found
 }
-
