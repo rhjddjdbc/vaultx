@@ -117,12 +117,7 @@ cli_delete_entry() {
   hmac="$VAULT_DIR/$ENTRY_CLI.hmac"
   meta="$VAULT_DIR/.${ENTRY_CLI}.meta"
 
-  [[ ! -f "$file" ]] && { echo "Entry '$ENTRY_CLI' not found." >&2; exit 1; }
-
-  if ! prompt_and_verify_password; then
-    echo "Master password verification failed." >&2
-    exit 1
-  fi
+  [[ ! -f "$file" ]] && { echo "Entry '$ENTRY_CLI' not found." >&2; exit 1; 
 
   rm -f "$file" "$hmac" "$meta"
   echo "Entry '$ENTRY_CLI' deleted."
