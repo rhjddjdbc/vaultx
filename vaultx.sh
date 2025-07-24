@@ -2,7 +2,10 @@
 set -euo pipefail
 umask 077
 
-# Secure variable unset with whitelist
+##############################################
+# Securely unset sensitive variables
+# Clears and unsets sensitive values in memory
+##############################################
 secure_unset() {
   local var val len
   local whitelist=(MASTER pw pw2 username)
@@ -20,7 +23,9 @@ secure_unset() {
   unset HASHED STORED_HASH
 }
 
-# Argument-Parsing
+##################
+# Argument Parsing
+##################
 CLI_MODE=false
 VAULT_CLI=""
 ACTION_CLI=""
@@ -35,37 +40,54 @@ while [[ $# -gt 0 ]]; do
     -a|--action) ACTION_CLI="$2"; shift ;;
     -e|--entry) ENTRY_CLI="$2"; shift ;;
     -u|--username) USERNAME_CLI="$2"; shift ;;
-    -m|--method) METHOD_CLI="$2"; shift ;;   
+    -m|--method) METHOD_CLI="$2"; shift ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
   shift
 done
+
+#####################################
+# Configuration and Environment Setup
+#####################################
+
+# Determine home directory
 HOME="${HOME:-$(getent passwd "$(id -u -n)" | cut -d: -f6)}"
 CONFIG_FILE="$HOME/.config/vaultx/config.env"
 
-# Load config
+# Load config file if present
 if [[ -f "$CONFIG_FILE" ]]; then
   perms=$(stat -c "%a" "$CONFIG_FILE")
   if [[ "$perms" != "600" ]]; then
-    echo "WARNING: $CONFIG_FILE has permissions $perms. Setting to 600." >&2
+    echo "WARNING: $CONFIG_FILE has permissions $perms. Fixing to 600." >&2
     chmod 600 "$CONFIG_FILE"
   fi
   # shellcheck disable=SC1090
   source "$CONFIG_FILE"
 else
-  echo "No config file found at $CONFIG_FILE. Using defaults." >&2
+  echo "No config found at $CONFIG_FILE. Using defaults." >&2
 fi
-# Script-Setup
+
+# Default configuration values
+VAULT="${VAULT_DIR:-vault}"
+PASSWORD_LENGTH="${PASSWORD_LENGTH:-24}"
+PASSWORD_COST="${PASSWORD_COST:-16}"
+MAX_ATTEMPTS="${MAX_ATTEMPTS:-5}"
+LOCKOUT_DURATION="${LOCKOUT_DURATION:-600}"
+
+##################################
+# Script Setup and Library Loading
+##################################
 SCRIPT_DIR=$(dirname "$(realpath "$0")")
 
-# Source libraries
 source "$SCRIPT_DIR/lib/option.sh"
 source "$SCRIPT_DIR/lib/pass.sh"
 source "$SCRIPT_DIR/lib/tools.sh"
 source "$SCRIPT_DIR/lib/cli.sh"
 source "$SCRIPT_DIR/lib/vault.sh"
 
-# CLI-Mode start
+####################
+# CLI Mode Execution
+####################
 if [[ "$CLI_MODE" == true ]]; then
   run_cli_mode
   exit 0
@@ -73,43 +95,52 @@ fi
 
 NEW_VAULT_CREATED=false
 
-VAULT="${VAULT_DIR:-vault}"
-PASSWORD_LENGTH="${PASSWORD_LENGTH:-24}"
-PASSWORD_COST="${PASSWORD_COST:-16}" 
-
-# Escalation tool detection
-if command -v doas &>/dev/null; then ESC_CMD="doas"
-elif command -v sudo &>/dev/null; then ESC_CMD="sudo"
-else ESC_CMD=""
+#####################################
+# Privilege Escalation Tool Detection
+#####################################
+if command -v doas &>/dev/null; then
+  ESC_CMD="doas"
+elif command -v sudo &>/dev/null; then
+  ESC_CMD="sudo"
+else
+  ESC_CMD=""
 fi
 
-# Ensure /proc/self/fd is properly protected
+####################################
+# Protect /proc/self/fd from leakage
+####################################
 protect_fd() {
   perms=$(stat -Lc '%a' /proc/self/fd)
   other=${perms: -1}
   if (( other != 0 )); then
-    echo "WARNING: /proc/self/fd has permissions $perms – file descriptors may leak to other users." >&2
+    echo "WARNING: /proc/self/fd has permissions $perms – descriptors might leak to other users." >&2
     if [[ -n $ESC_CMD ]]; then
-      echo "Attempting to remount /proc with hidepid=2 using $ESC_CMD…" >&2
+      echo "Attempting to remount /proc with hidepid=2 using $ESC_CMD..." >&2
       if $ESC_CMD mount -o remount,hidepid=2 /proc; then
-        echo "SUCCESS: /proc has been remounted with hidepid=2." >&2
+        echo "SUCCESS: /proc was remounted with hidepid=2." >&2
       else
-        echo "ERROR: Failed to remount. Check your $ESC_CMD configuration." >&2
+        echo "ERROR: Failed to remount. Please check $ESC_CMD configuration." >&2
       fi
     else
-      echo "No privilege tool found. Cannot remount /proc automatically." >&2
+      echo "No privilege escalation tool found. Cannot remount /proc automatically." >&2
     fi
   fi
 }
 protect_fd
 
-# Predeclare variables for strict mode
+#########################################
+# Pre-declare all variables (strict mode)
+#########################################
 MASTER="" HASHED="" STORED_HASH=""
-pw="" pw2="" username="" note=""
+pw="" pw2="" username="" 
 name="" selected="" action=""
 
+#######################################
+# Vault Selection and Metadata Creation
+#######################################
 select_vault
-cat > "$VAULT_DIR/.backup.meta" << EOF
+
+cat > "$VAULT/.backup.meta" << EOF
 Algorithm: aes-256-cbc
 PBKDF2 iterations: 200000
 Salted: yes
@@ -120,17 +151,18 @@ OpenSSL command to decrypt manually:
 
 openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -salt -a -in github.bin -out github.txt
 EOF
-chmod 600 "$VAULT_DIR/.backup.meta"
 
-# Secure temp dir
+chmod 600 "$VAULT/.backup.meta"
+
+#####################################
+# Secure Temporary Directory Creation
+#####################################
 TMP_DIR=$(mktemp -d -p "$VAULT" vaultx-tmp.XXXXXX)
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-# Lockout policy
-MAX_ATTEMPTS=5
-LOCKOUT_DURATION=600
-
-# Main menu
+##############################
+# Main Menu – Interactive Mode
+##############################
 main_menu() {
   if [[ "$NEW_VAULT_CREATED" == true ]]; then
     echo "New vault created. Please add your first entry."
@@ -148,7 +180,7 @@ main_menu() {
     "Audit vault" \
     "Exit" \
   | fzf --prompt="Select action: ")
-  
+
   [[ -z "$action" ]] && echo "No action selected." >&2 && exit 1
 
   case "$action" in
