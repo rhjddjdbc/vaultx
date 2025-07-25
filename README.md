@@ -81,7 +81,7 @@ BACKUP_DIR="$HOME/vault_backups"    # Location for encrypted vault backups
 
 # Password options
 PASSWORD_LENGTH=24                  # Default length for generated passwords
-PASSWORD_COST=16                    # BCrypt cost factor for master hash strength
+PASSWORD_COST=16                    # BCrypt cost factor for master hash strength obly change in the beginning.
 HIBP_CHECK_CLI=false                # Auto breach check for cli mode
 
 # Security settings
