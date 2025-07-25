@@ -1,271 +1,204 @@
-# lib/cli_mode.sh
+# lib/option.sh
 
-#########################################
-# Entry point for CLI mode
-# Handles CLI args and dispatches actions
-#########################################
-run_cli_mode() {
-  vault_choice="$VAULT_CLI"
-  VAULT_DIR="${VAULT_DIR:-vault}/$vault_choice"
-  MASTER_HASH_FILE="$VAULT_DIR/.master_hash"
-  FAIL_COUNT_FILE="$VAULT_DIR/.fail_count"
-  LAST_FAIL_FILE="$VAULT_DIR/.last_fail"
-
-  # Ensure the vault directory exists
-  if [[ ! -d "$VAULT_DIR" ]]; then
-    echo "Vault '$vault_choice' not found. Creating it now..."
-    mkdir -p "$VAULT_DIR" || { echo "Failed to create vault directory." >&2; exit 1; }
-    chmod 700 "$VAULT_DIR"
-  fi
-
-  # Now we can safely create the TMP_DIR inside it
-  TMP_DIR=$(mktemp -d -p "$VAULT_DIR" vaultx-tmp.XXXXXX) || {
-    echo "Failed to create temporary directory." >&2
-    exit 1
-  }
-  trap 'rm -rf "$TMP_DIR"' EXIT
-  case "$ACTION_CLI" in
-    add|get|delete)
-      [[ -z "$ENTRY_CLI" ]] && { echo "Missing entry name (--entry/-e)." >&2; exit 1; }
-      ;;
-  esac
-
-  case "$ACTION_CLI" in
-    add)
-      cli_add_entry
-      ;;
-    get)
-      cli_get_entry
-      ;;
-    delete)
-      cli_delete_entry
-      ;;
-    backup)
-      cli_backup_vault
-      ;;
-    audit)
-      cli_audit_vault
-      ;;
-    *)
-      echo "Invalid CLI action. Use: add, get, delete, backup, backup-all, audit" >&2
-      exit 1
-      ;;
-  esac
-
-}
-
-#########################################
-# Adds a new encrypted entry to the vault
-#########################################
-cli_add_entry() {
+############################################################
+# Save new entry to vault (with optional username)
+# Ensures unique name, encrypts, generates HMAC and metadata
+############################################################
+save_new_entry() {
   if ! prompt_and_verify_password; then
-    echo "Master password verification failed." >&2
+    echo "Master password verification failed. Exiting..." >&2
     exit 1
   fi
 
-  file="$VAULT_DIR/$ENTRY_CLI.bin"
-  [[ -f "$file" ]] && { echo "Entry already exists." >&2; exit 1; }
+  read -t 30 -r -p "Entry name for '$vault_choice' vault (e.g. github) [timeout 30s]: " name || { echo -e "\nTimeout reached." >&2; exit 1; }
+  [[ -z "$name" || ! "$name" =~ ^[A-Za-z0-9._-]+$ ]] && { echo "Invalid entry name." >&2; exit 1; }
 
-  pw=$(cli_password_input "${METHOD_CLI:-manual}") || exit 1
+  vault_file="$VAULT_DIR/$name.bin"
+  counter=2
+  while [[ -f "$vault_file" ]]; do
+    vault_file="$VAULT_DIR/$name-$counter.bin"
+    name="$name-$counter"
+    ((counter++))
+  done
+
+  vault_root=$(realpath -m "$VAULT_DIR")
+  [[ "$(realpath -m "$vault_file")" != "$vault_root/"* ]] && { echo "Invalid path." >&2; exit 1; }
+
+  read -t 30 -r -p "Username (optional) [timeout 30s]: " username || username=""
+
+  pw=$(generate_password_prompt) || exit 1
 
   {
-    echo "# AES-256-CBC, PBKDF2, 200000 iterations"
-    [[ -n "$USERNAME_CLI" ]] && echo "Username: $USERNAME_CLI"
-    echo "Password: $pw"
+    echo "# Vault encrypted with OpenSSL AES-256-CBC, PBKDF2, 200000 iterations"
+    [[ -n "$username" ]] && printf "Username: %s\n" "$username"
+    printf "Password: %s\n" "$pw"
   } | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -a \
-      -out "$file" -pass fd:3 3<<<"$MASTER"
+      -out "$vault_file" -pass fd:3 3<<<"$MASTER"
 
-  hmac=$(openssl dgst -sha256 -mac HMAC -macopt key:file:/dev/fd/3 "$file" 3<<<"$MASTER" | awk '{print $2}')
-  echo "$hmac  $(basename "$file")" > "$VAULT_DIR/$ENTRY_CLI.hmac"
-
-  echo "Entry '$ENTRY_CLI' added."
+  hmac=$(openssl dgst -sha256 -mac HMAC -macopt key:file:/dev/fd/3 "$vault_file" 3<<<"$MASTER" | awk '{print $2}')
+  echo "$hmac  $(basename "$vault_file")" > "$VAULT_DIR/$name.hmac"
   secure_unset
 }
 
-#####################################
-# Decrypts and displays a vault entry
-#####################################
-cli_get_entry() {
-  file="$VAULT_DIR/$ENTRY_CLI.bin"
-  [[ ! -f "$file" ]] && { echo "Entry '$ENTRY_CLI' not found." >&2; exit 1; }
+###################################################################
+# Decrypt and view an entry
+# Uses HMAC for integrity check and shows password handling options
+###################################################################
+decrypt_entry() {
+  selected=$(find "$VAULT_DIR" -maxdepth 1 -type f -name "*.bin" | fzf --prompt="Select entry to decrypt: ")
+  [[ -z "$selected" ]] && echo "Cancelled." >&2 && exit 1
 
-  if ! prompt_and_verify_password; then
-    echo "Master password verification failed." >&2
-    exit 1
-  fi
-
+  file="$selected"
   hmac_file="${file%.bin}.hmac"
-  [[ ! -f "$hmac_file" ]] && { echo "HMAC file missing." >&2; return 1; }
+  [[ ! -f "$hmac_file" ]] && { echo "HMAC file missing for entry." >&2; exit 1; }
+
+  prompt_and_verify_password || exit 1
 
   expected=$(awk '{print $1}' "$hmac_file")
   actual=$(openssl dgst -sha256 -mac HMAC -macopt key:file:/dev/fd/3 "$file" 3<<<"$MASTER" | awk '{print $2}')
-  ! hash_equals "$expected" "$actual" && { echo "HMAC mismatch."; secure_unset; return 1; }
+  if ! hash_equals "$expected" "$actual"; then
+      echo "Integrity verification failed." >&2
+      secure_unset
+      exit 1
+  fi
 
   decrypted=$(grep -v '^#' "$file" | openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -salt -a -pass fd:3 3<<<"$MASTER") || {
     echo "Decryption failed." >&2
     secure_unset
-    return 1
+    exit 1
   }
 
-  user=$(echo "$decrypted" | awk -F': ' '/^Username:/ { print $2 }')
-  pass=$(echo "$decrypted" | awk -F': ' '/^Password:/ { print $2 }')
+  user=$(printf '%s\n' "$decrypted" | awk -F': ' '/^Username:/ { print $2 }')
+  pass=$(printf '%s\n' "$decrypted" | awk -F': ' '/^Password:/ { print $2 }')
 
-  [[ -n "$user" ]] && echo "Username: $user"
-  echo "Password: $pass"
+  pass_action=$(printf "%s\n" \
+      "Display password only" \
+      "Copy password only" \
+      "Display and copy password" \
+      "Show ASCII QR code (clears after 30s)" \
+      "Breach check" \
+      "Cancel" \
+      | fzf --prompt="Choose password handling method: ")
 
-  if [[ "$HIBP_CHECK_CLI" == "true" ]]; then
-     check_pwned_password "$pass"; 
+  case "$pass_action" in
+    "Display password only")
+        printf 'Password: %s\n' "$pass"
+        ;;
+    "Copy password only")
+        copy_to_clipboard "$pass"
+        ;;
+    "Display and copy password")
+        printf 'Password: %s\n' "$pass"
+        copy_to_clipboard "$pass"
+        ;;
+    "Show ASCII QR code (clears after 30s)")
+        [[ -n "$user" ]] && printf 'Username: %s\n' "$user"
+        display_ascii_qr_temp "$pass"
+        ;;
+    "Breach check")
+        if check_pwned_password "$pass"; then
+            echo "Password not found in any known breaches." >&2
+        fi
+        ;;
+    *)
+        echo "Action cancelled." >&2
+        ;;
+  esac
+
+  if [[ "$pass_action" != "Breach check" && "$pass_action" != "Show ASCII QR code (clears after 30s)" && -n "$user" ]]; then
+      printf 'Username: %s\n' "$user"
   fi
 
   secure_unset
 }
 
-##############################################
-# Deletes an entry and related metadata files
-#############################################
-cli_delete_entry() {
-    entry_name="$ENTRY_CLI"
+######################################################
+# Edit an existing vault entry (username and password)
+######################################################
+edit_entry() {
+  selected=$(find "$VAULT_DIR" -maxdepth 1 -type f -name "*.bin" | fzf --prompt="Select entry to edit: ")
+  [[ -z "$selected" ]] && echo "Cancelled." >&2 && return
 
-    # Define file paths
-    file_path="$VAULT_DIR/$entry_name.bin"
-    hmac_path="$VAULT_DIR/$entry_name.hmac"
+  file="$selected"
+  name=$(basename "$file" .bin)
 
-    # Check if entry exists  
-    if [ ! -f "$file_path" ]; then  
-        echo "Entry '$entry_name' not found." >&2  
-        exit 1  
-    fi  
+  if ! prompt_and_verify_password; then
+      echo "Master password verification failed." >&2
+      return
+  fi
 
-    # Prompt for confirmation  
-    printf "Are you sure you want to delete entry '%s'? [y/N]: " "$entry_name"  
-    read confirm  
-    if ! echo "$confirm" | grep -qi '^y$'; then  
-        echo "Deletion cancelled."  
-        return 0  
-    fi  
+  tmpfile="/tmp/vault_plain_$$.txt"
 
-    rm -f "$file_path" "$hmac_path"  
-    echo "Entry '$entry_name' deleted."  
-    secure_unset  
+  # Decrypt entry to temp file (strips comment lines)
+  grep -v '^#' "$file" | openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -salt -a -pass fd:3 3<<<"$MASTER" > "$tmpfile" || {
+      echo "Failed to decrypt entry." >&2
+      rm -f "$tmpfile"
+      secure_unset
+      return
+  }
+
+  current_user=$(awk -F': ' '/^Username:/ { print $2 }' "$tmpfile")
+  current_pass=$(awk -F': ' '/^Password:/ { print $2 }' "$tmpfile")
+
+  read -r -p "Update username (leave blank to keep current: '$current_user'): " username
+  [[ -z "$username" ]] && username="$current_user"
+
+  echo "Update password:"
+  pw=$(generate_password_prompt) || { rm -f "$tmpfile"; return; }
+
+  {
+    echo "# Vault encrypted with OpenSSL AES-256-CBC, PBKDF2, 200000 iterations"
+    [[ -n "$username" ]] && printf "Username: %s\n" "$username"
+    printf "Password: %s\n" "$pw"
+  } | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -a -out "$file" -pass fd:3 3<<<"$MASTER"
+
+  rm -f "$tmpfile"
+
+  hmac=$(openssl dgst -sha256 -mac HMAC -macopt key:file:/dev/fd/3 "$file" 3<<<"$MASTER" | awk '{print $2}')
+  echo "$hmac  $(basename "$file")" > "$VAULT_DIR/$name.hmac"
+
+  echo "Entry '$name' successfully updated."
+  secure_unset
+}
+
+################################
+# Delete an entry from the vault
+################################
+delete_entry() {
+  selected=$(find "$VAULT_DIR" -maxdepth 1 -type f -name "*.bin" \
+      | fzf --prompt="Select entry to delete: ")
+  [[ -z "$selected" ]] && echo "Cancelled." >&2 && exit 1
+
+  read -t 30 -r -p "Delete '$(basename "$selected")'? [y/N]: " confirm
+  if [[ "$confirm" =~ ^[yY]$ ]]; then
+      rm -f "$selected" "${selected%.bin}.hmac" 
+      echo "Entry deleted."
+  else
+      echo "Operation cancelled."
+  fi
+}
+
+#########################################################
+# Create a ZIP archive backup of the current vault folder
+# Backup goes to BACKUP_DIR or falls back to $HOME
+#########################################################
+backup_vault() {
+  ts=$(date +"%Y-%m-%dT%H-%M-%S")
+  mkdir -p "$BACKUP_DIR" 
+  backup="${BACKUP_DIR:-$HOME}/$vault_choice-$ts.zip"
+  zip -rq "$backup" "$VAULT_DIR"
+  chmod 600 "$backup"
+  echo "Backup for vault '$vault_choice' saved at $backup."
 }
 
 #####################################################
-# Handles password input for CLI (manual or generated)
-######################################################
-cli_password_input() {
-  local method="$1"
-  local pw copy_choice custom_len
-
-  case "$method" in
-    manual)
-      # Prompt to stderr, read silently with 60s timeout
-      echo -n "Password (timeout 60s): " >&2
-      read -s -r -t 60 pw
-      echo >&2
-
-      # Validate non-empty
-      if [[ -z "$pw" ]]; then
-        echo "Password cannot be empty." >&2
-        return 1
-      fi
-      if [[ "$HIBP_CHECK_CLI" == "true" ]]; then
-        if ! check_pwned_password "$pw"; then
-	    return 1
-        fi
-      fi
-
-      # Output only the password to stdout
-      printf '%s' "$pw"
-      ;;
-
-    generate)
-      custom_len="${PASSWORD_LENGTH:-24}"
-      pw=$(LC_ALL=C tr -dc 'A-Za-z0-9@#%&+=_' </dev/urandom | head -c "$custom_len")
-      echo "Generated password: $pw" >&2
-      read -r -p "Copy to clipboard? [y/N]: " copy_choice
-      if [[ "$copy_choice" =~ ^[Yy]$ ]]; then
-        copy_to_clipboard "$pw"
-      fi
-      printf '%s' "$pw"
-      ;;
-
-    *)
-      echo "Unknown method: $method" >&2
-      return 1
-      ;;
-  esac
-}
-
-############################################
-# CLI version of vault backup functionality
-############################################
-cli_backup_vault() {
-  ts=$(date +"%Y%m%d")
-  dest="${BACKUP_DIR:-$HOME}"
-  backup_path="$dest/$vault_choice-$ts.zip"
-
-  if ! command -v zip >/dev/null 2>&1; then
-    echo "Error: 'zip' command not found. Please install it." >&2
-    exit 1
-  fi
-
-  # Ensure backup directory exists
-  if [[ ! -d "$dest" ]]; then
-    echo "Backup directory '$dest' does not exist. Creating it..."
-    mkdir -p "$dest" || {
-      echo "Failed to create backup directory: $dest" >&2
-      exit 1
-    }
-  fi
-
-  zip -rq "$backup_path" "$VAULT_DIR" || {
-    echo "Backup failed." >&2
-    exit 1
-  }
-
-  chmod 600 "$backup_path"
-  echo "Backup for vault '$vault_choice' saved at: $backup_path"
-}
-
-# all vaults backup
-cli_backup_all_vaults() {
-  base_dir="${VAULT_DIR:-vault}"
-  dest="${BACKUP_DIR:-$HOME}"
-  ts=$(date +"%Y%m%d")
-  backup_file="$dest/all-vaults-$ts.zip"
-
-  if ! command -v zip >/dev/null; then
-    echo "Error: 'zip' not found. Please install zip utility." >&2
-    exit 1
-  fi
-
-  if [[ ! -d "$base_dir" ]]; then
-    echo "Vault base directory '$base_dir' not found." >&2
-    exit 1
-  fi
-
-  echo "Creating backup of all vaults in: $backup_file"
-  mkdir -p "$dest"
-  zip -rq "$backup_file" "$base_dir"
-  chmod 600 "$backup_file"
-  echo "Backup complete: $backup_file"
-}
-
-#####################################
-# CLI audit: list entries with dates
-#####################################
-cli_audit_vault() {
-  echo "Vault audit for '$vault_choice':"
-  echo
-
-  if [[ ! -d "$VAULT_DIR" ]]; then
-    echo "Vault directory '$VAULT_DIR' not found." >&2
-    exit 1
-  fi
-
-  find "$VAULT_DIR" -maxdepth 1 -type f -name "*.bin" | sort | while read -r entry; do
+# Audit vault contents - list entries with timestamps
+#####################################################
+audit_vault() {
+  echo "Listing contents of '$vault_choice' vault:"
+  find "$VAULT_DIR" -maxdepth 1 -name "*.bin" | while read -r entry; do
     label=$(basename "$entry" .bin)
-    modified=$(stat -c '%y' "$entry" 2>/dev/null || date -r "$entry")
+    modified=$(stat -c '%y' "$entry")
     echo "- $label (last modified: $modified)"
   done
 }
