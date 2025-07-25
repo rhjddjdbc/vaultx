@@ -194,9 +194,6 @@ Located in `~/.config/vaultx/config.env`:
 
 ---
 
-Sure! Here's the **CLI Mode Usage** section adapted to English and matching your script options, including the backup with `--all` flag and the audit function:
-
----
 
 ## CLI Mode Usage
 
