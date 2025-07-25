@@ -32,6 +32,7 @@ ACTION_CLI=""
 ENTRY_CLI=""
 USERNAME_CLI=""
 METHOD_CLI=""
+ALL_CLI=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -41,7 +42,11 @@ while [[ $# -gt 0 ]]; do
     -e|--entry) ENTRY_CLI="$2"; shift ;;
     -u|--username) USERNAME_CLI="$2"; shift ;;
     -m|--method) METHOD_CLI="$2"; shift ;;
-    *) echo "Unknown option: $1"; exit 1 ;;
+    --all) ALL_CLI=true ;;
+    *)
+      echo "Unknown option: $1"
+      exit 1
+      ;;
   esac
   shift
 done
