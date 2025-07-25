@@ -194,19 +194,37 @@ Located in `~/.config/vaultx/config.env`:
 
 ---
 
+Sure! Here's the **CLI Mode Usage** section adapted to English and matching your script options, including the backup with `--all` flag and the audit function:
+
+---
+
 ## CLI Mode Usage
 
-VaultX now supports a **CLI mode**, allowing you to perform essential operations (`add`, `get`, `delete`) via command-line flags without the need for interactive menus.
+VaultX supports a **CLI mode** that allows you to perform essential operations directly via command line flags without interactive menus.
 
-### 1. **Add an Entry**
+### General Options
 
-To add a new entry (e.g., `github`) with a username and password:
+| Flag             | Description                                                  |
+| ---------------- | ------------------------------------------------------------ |
+| `--cli`          | Enables CLI mode                                             |
+| `-v, --vault`    | Specify the vault name (e.g., `default`)                     |
+| `-a, --action`   | Action to perform: `add`, `get`, `delete`, `backup`, `audit` |
+| `-e, --entry`    | Entry name (required for `add`, `get`, `delete`)             |
+| `-u, --username` | Username for the entry (used with `add`)                     |
+| `-m, --method`   | Password method for `add`: `manual` or `generate`            |
+| `--all`          | Flag for the `backup` action: backup all vaults              |
+
+---
+
+### 1. **Add a new entry**
+
+Using manual password input:
 
 ```bash
 ./vaultx.sh --cli --vault default --action add --entry github --username your_username --method manual
 ```
 
-You can also generate a password automatically for the entry:
+Using automatically generated password:
 
 ```bash
 ./vaultx.sh --cli --vault default --action add --entry github --username your_username --method generate
@@ -214,27 +232,59 @@ You can also generate a password automatically for the entry:
 
 ---
 
-### 2. **Get an Entry**
+### 2. **Get an entry**
 
-To retrieve an entry (e.g., `github`) and show the username and password:
+Retrieve the username and password after master password prompt:
 
 ```bash
 ./vaultx.sh --cli --vault default --action get --entry github
 ```
 
-This command will prompt you for the master password and then show the username and password for the entry.
-
 ---
 
-### 3. **Delete an Entry**
+### 3. **Delete an entry**
 
-To delete an entry (e.g., `github`):
+Securely removes the specified entry:
 
 ```bash
 ./vaultx.sh --cli --vault default --action delete --entry github
 ```
 
-This will securely remove the entry’s data from the vault.
+---
+
+### 4. **Backup vault**
+
+Backup a single vault:
+
+```bash
+./vaultx.sh --cli --vault default --action backup
+```
+
+Backup **all vaults** using the `--all` flag:
+
+```bash
+./vaultx.sh --cli --action backup --all
+```
+
+---
+
+### 5. **Audit vault**
+
+Displays all entries with last-modified timestamps:
+
+```bash
+./vaultx.sh --cli --vault default --action audit
+```
+
+---
+
+### Example
+
+Backup all vaults via cron job:
+
+```bash
+0 3 * * * /path/to/vaultx.sh --cli --action backup --all
+```
 
 ---
 
