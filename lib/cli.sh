@@ -249,7 +249,6 @@ cli_backup_all_vaults() {
     exit 1
   fi
 
-  echo "Creating backup of all vaults in: $backup_file"
   mkdir -p "$dest"
   zip -rq "$backup_file" "$base_dir"
   chmod 600 "$backup_file"
