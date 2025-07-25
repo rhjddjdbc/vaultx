@@ -18,7 +18,7 @@
 * **QR Code Export**: Display password as ASCII QR code directly in the terminal
 * **Brute-Force Protection**: Lockout mechanism with exponential backoff on repeated failures
 * **Secure Memory Cleanup**: Temporary variables are zeroed and unset after usage
-* **basic script/cli mode**: for add, get, delete
+* **script/cli mode**: for add, get, delete, audit, Backup vault/ all vaults
 
 ---
 
