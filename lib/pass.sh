@@ -65,6 +65,7 @@ generate_password_prompt() {
 # Handles lockout logic on repeated failures and compares hashed passwords
 ##########################################################################
 prompt_and_verify_password() {
+  # Check for lockout
   if [[ -f $FAIL_COUNT_FILE && -f $LAST_FAIL_FILE ]]; then
     fails=$(<"$FAIL_COUNT_FILE")
     last=$(<"$LAST_FAIL_FILE")
@@ -76,26 +77,42 @@ prompt_and_verify_password() {
     fi
   fi
 
+  # Prompt user
   if ! read -t 60 -s -r -p "Master password for '$vault_choice' vault (timeout 60s): " MASTER; then
     echo -e "\nTimeout or no input. Aborting." >&2
     return 1
   fi
   echo
 
+  # First-time password setup
   if [[ ! -f "$MASTER_HASH_FILE" ]]; then
     HASHED=$(htpasswd -nbB -C "$PASSWORD_COST" dummy "$MASTER" | cut -d: -f2)
     echo "$HASHED" > "$MASTER_HASH_FILE"
+    chmod 600 "$MASTER_HASH_FILE"
     echo "Master password initialized successfully for '$vault_choice'." >&2
     rm -f "$FAIL_COUNT_FILE" "$LAST_FAIL_FILE"
     return 0
   fi
 
-  tmp="$TMP_DIR/tmpfile"
+  # Load stored hash
   STORED_HASH=$(<"$MASTER_HASH_FILE")
+  tmp=$(mktemp)
   printf 'dummy:%s\n' "$STORED_HASH" > "$tmp"
 
-  if htpasswd -vbB -C "$PASSWORD_COST" "$tmp" dummy "$MASTER" &>/dev/null; then
+  # Verify password WITHOUT using -C (fix)
+  if htpasswd -vbB "$tmp" dummy "$MASTER" &>/dev/null; then
     rm -f "$tmp" "$FAIL_COUNT_FILE" "$LAST_FAIL_FILE"
+
+    # Optional: rehash with higher cost if desired
+    # if [[ "$STORED_HASH" =~ ^\$2[aby]?\$([0-9]{2})\$ ]]; then
+    #   current_cost="${BASH_REMATCH[1]}"
+    #   if (( current_cost < PASSWORD_COST )); then
+    #     NEW_HASH=$(htpasswd -nbB -C "$PASSWORD_COST" dummy "$MASTER" | cut -d: -f2)
+    #     echo "$NEW_HASH" > "$MASTER_HASH_FILE"
+    #     chmod 600 "$MASTER_HASH_FILE"
+    #   fi
+    # fi
+
     return 0
   else
     rm -f "$tmp"
