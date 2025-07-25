@@ -24,8 +24,12 @@ run_cli_mode() {
     exit 1
   }
   trap 'rm -rf "$TMP_DIR"' EXIT
+  case "$ACTION_CLI" in
+    add|get|delete)
+      [[ -z "$ENTRY_CLI" ]] && { echo "Missing entry name (--entry/-e)." >&2; exit 1; }
+      ;;
+  esac
 
-  [[ -z "$ENTRY_CLI" ]] && { echo "Missing entry name (--entry/-e)." >&2; exit 1; }
   case "$ACTION_CLI" in
     add)
       cli_add_entry
@@ -36,11 +40,18 @@ run_cli_mode() {
     delete)
       cli_delete_entry
       ;;
+    backup)
+      cli_backup_vault
+      ;;
+    audit)
+      cli_audit_vault
+      ;;
     *)
-      echo "Invalid CLI action. Use: add, get, delete" >&2
+      echo "Invalid CLI action. Use: add, get, delete, backup, backup-all, audit" >&2
       exit 1
       ;;
   esac
+
 }
 
 #########################################
@@ -109,22 +120,36 @@ cli_get_entry() {
   secure_unset
 }
 
-#############################################
+##############################################
 # Deletes an entry and related metadata files
 #############################################
 cli_delete_entry() {
-  file="$VAULT_DIR/$ENTRY_CLI.bin"
-  hmac="$VAULT_DIR/$ENTRY_CLI.hmac"
-  meta="$VAULT_DIR/.${ENTRY_CLI}.meta"
+    entry_name="$ENTRY_CLI"
 
-  [[ ! -f "$file" ]] && { echo "Entry '$ENTRY_CLI' not found." >&2; exit 1; 
+    # Define file paths
+    file_path="$VAULT_DIR/$entry_name.bin"
+    hmac_path="$VAULT_DIR/$entry_name.hmac"
 
-  rm -f "$file" "$hmac" "$meta"
-  echo "Entry '$ENTRY_CLI' deleted."
-  secure_unset
+    # Check if entry exists  
+    if [ ! -f "$file_path" ]; then  
+        echo "Entry '$entry_name' not found." >&2  
+        exit 1  
+    fi  
+
+    # Prompt for confirmation  
+    printf "Are you sure you want to delete entry '%s'? [y/N]: " "$entry_name"  
+    read confirm  
+    if ! echo "$confirm" | grep -qi '^y$'; then  
+        echo "Deletion cancelled."  
+        return 0  
+    fi  
+
+    rm -f "$file_path" "$hmac_path"  
+    echo "Entry '$entry_name' deleted."  
+    secure_unset  
 }
 
-######################################################
+#####################################################
 # Handles password input for CLI (manual or generated)
 ######################################################
 cli_password_input() {
@@ -169,4 +194,78 @@ cli_password_input() {
       return 1
       ;;
   esac
+}
+
+############################################
+# CLI version of vault backup functionality
+############################################
+cli_backup_vault() {
+  ts=$(date +"%Y%m%d")
+  dest="${BACKUP_DIR:-$HOME}"
+  backup_path="$dest/$vault_choice-$ts.zip"
+
+  if ! command -v zip >/dev/null 2>&1; then
+    echo "Error: 'zip' command not found. Please install it." >&2
+    exit 1
+  fi
+
+  # Ensure backup directory exists
+  if [[ ! -d "$dest" ]]; then
+    echo "Backup directory '$dest' does not exist. Creating it..."
+    mkdir -p "$dest" || {
+      echo "Failed to create backup directory: $dest" >&2
+      exit 1
+    }
+  fi
+
+  zip -rq "$backup_path" "$VAULT_DIR" || {
+    echo "Backup failed." >&2
+    exit 1
+  }
+
+  chmod 600 "$backup_path"
+  echo "Backup for vault '$vault_choice' saved at: $backup_path"
+}
+
+# all vaults backup
+cli_backup_all_vaults() {
+  base_dir="${VAULT_DIR:-vault}"
+  dest="${BACKUP_DIR:-$HOME}"
+  ts=$(date +"%Y%m%d")
+  backup_file="$dest/all-vaults-$ts.zip"
+
+  if ! command -v zip >/dev/null; then
+    echo "Error: 'zip' not found. Please install zip utility." >&2
+    exit 1
+  fi
+
+  if [[ ! -d "$base_dir" ]]; then
+    echo "Vault base directory '$base_dir' not found." >&2
+    exit 1
+  fi
+
+  echo "Creating backup of all vaults in: $backup_file"
+  mkdir -p "$dest"
+  zip -rq "$backup_file" "$base_dir"
+  chmod 600 "$backup_file"
+  echo "Backup complete: $backup_file"
+}
+
+#####################################
+# CLI audit: list entries with dates
+#####################################
+cli_audit_vault() {
+  echo "Vault audit for '$vault_choice':"
+  echo
+
+  if [[ ! -d "$VAULT_DIR" ]]; then
+    echo "Vault directory '$VAULT_DIR' not found." >&2
+    exit 1
+  fi
+
+  find "$VAULT_DIR" -maxdepth 1 -type f -name "*.bin" | sort | while read -r entry; do
+    label=$(basename "$entry" .bin)
+    modified=$(stat -c '%y' "$entry" 2>/dev/null || date -r "$entry")
+    echo "- $label (last modified: $modified)"
+  done
 }
