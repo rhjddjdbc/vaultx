@@ -44,12 +44,7 @@
 ```bash
 git clone https://github.com/rhjddjdbc/vaultx.git
 cd vaultx
-chmod +x vaultx.sh
-chmod +x lib/pass.sh
-chmod +x lib/tools.sh
-chmod +x lib/option.sh
-chmod +x lib/cli.sh
-chmod +x lib/vault.sh
+chmod +x vaultx.sh lib/*.sh
 ```
 
 Optional: create a configuration file:
