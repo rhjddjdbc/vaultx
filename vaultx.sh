@@ -43,6 +43,14 @@ while [[ $# -gt 0 ]]; do
     -u|--username) USERNAME_CLI="$2"; shift ;;
     -m|--method) METHOD_CLI="$2"; shift ;;
     --all) ALL_CLI=true ;;
+    -h|--help) 
+      if [[ -f "help.txt" ]]; then
+        cat help.txt
+      else
+        echo "help.txt not found."
+      fi
+      exit 0
+      ;;
     *)
       echo "Unknown option: $1"
       exit 1
