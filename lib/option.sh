@@ -123,18 +123,18 @@ edit_entry() {
   name=$(basename "$file" .bin)
 
   if ! prompt_and_verify_password; then
-      echo "Master password verification failed." >&2
-      return
+    echo "Master password verification failed." >&2
+    return
   fi
 
   tmpfile="/tmp/vault_plain_$$.txt"
 
   # Decrypt entry to temp file (strips comment lines)
   grep -v '^#' "$file" | openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -salt -a -pass fd:3 3<<<"$MASTER" > "$tmpfile" || {
-      echo "Failed to decrypt entry." >&2
-      rm -f "$tmpfile"
-      secure_unset
-      return
+    echo "Failed to decrypt entry." >&2
+    rm -f "$tmpfile"
+    secure_unset
+    return
   }
 
   current_user=$(awk -F': ' '/^Username:/ { print $2 }' "$tmpfile")
@@ -143,8 +143,18 @@ edit_entry() {
   read -r -p "Update username (leave blank to keep current: '$current_user'): " username
   [[ -z "$username" ]] && username="$current_user"
 
-  echo "Update password:"
-  pw=$(generate_password_prompt) || { rm -f "$tmpfile"; return; }
+  # Ask if the user wants to change the password
+  read -r -p "Do you want to change the password? [y/N]: " change_pw
+  if [[ "$change_pw" =~ ^[Yy]$ ]]; then
+    pw=$(generate_password_prompt) || {
+      echo "Password generation failed or cancelled." >&2
+      rm -f "$tmpfile"
+      secure_unset
+      return
+    }
+  else
+    pw="$current_pass"
+  fi
 
   {
     echo "# Vault encrypted with OpenSSL AES-256-CBC, PBKDF2, 200000 iterations"
@@ -160,6 +170,7 @@ edit_entry() {
   echo "Entry '$name' successfully updated."
   secure_unset
 }
+
 
 ################################
 # Delete an entry from the vault
