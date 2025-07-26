@@ -1,0 +1,89 @@
+VaultX - Secure command-line password manager written in Bash
+
+USAGE:
+  vaultx.sh [--cli] [--vault VAULT] [--action ACTION]
+            [--entry ENTRY] [--username USERNAME]
+            [--method METHOD] [--all]
+
+DESCRIPTION:
+  VaultX is a minimal, script-based password manager for the command line.
+  It supports multiple encrypted vaults, breach detection, QR code export,
+  and clipboard integration — all in a transparent and portable Bash script.
+
+OPTIONS:
+  --cli                      Enable non-interactive CLI mode
+
+  -v, --vault VAULT          Specify vault name (e.g., default)
+
+  -a, --action ACTION        Action to perform:
+                               add, get, delete, backup, audit
+
+  -e, --entry ENTRY          Entry name (used with add, get, delete)
+
+  -u, --username USERNAME    Username for the entry (used with add)
+
+  -m, --method METHOD        Password method:
+                               manual or generate
+
+  --all                      Backup all available vaults
+
+CONFIGURATION:
+  VaultX reads config from: ~/.config/vaultx/config.env
+
+  Supported variables:
+    VAULT_DIR          Directory for vault storage
+    BACKUP_DIR         ZIP backup destination
+    PASSWORD_LENGTH    Generated password length
+    PASSWORD_COST      BCrypt cost factor for master password
+    MAX_ATTEMPTS       Max allowed login attempts
+    LOCKOUT_DURATION   Lockout duration in seconds
+    HIBP_CHECK_CLI     Enable breach check in CLI mode
+
+FEATURES:
+  • Multiple vault support
+  • AES-256-CBC encryption with PBKDF2 and HMAC verification
+  • Clipboard auto-clear after 30 seconds
+  • ASCII QR export of password
+  • Breach check via Have I Been Pwned (SHA-1 k-anonymity)
+  • Exponential lockout on repeated login failures
+  • Audit vault entries with timestamps
+  • CLI mode for scripting and automation
+
+EXAMPLES:
+  Interactive mode:
+    ./vaultx.sh
+
+  Add an entry with generated password:
+    ./vaultx.sh --cli --vault default --action add \
+                --entry github --username alice --method generate
+
+  Get an entry:
+    ./vaultx.sh --cli --vault default --action get --entry github
+
+  Backup all vaults:
+    ./vaultx.sh --cli --action backup --all
+
+INSTALLATION:
+  git clone https://github.com/rhjddjdbc/vaultx.git
+  cd vaultx
+  chmod +x vaultx.sh lib/*.sh
+  mkdir -p ~/.config/vaultx
+  nano ~/.config/vaultx/config.env
+
+DEPENDENCIES:
+  Required:
+    bash ≥ 4.0
+    openssl
+    htpasswd (apache2-utils or httpd-tools)
+
+  Optional:
+    xclip or wl-clipboard
+    qrencode
+    curl
+    fzf
+
+EXIT STATUS:
+  0 on success, 1 on error
+
+LICENSE:
+  Licensed under GNU General Public License v3.0
