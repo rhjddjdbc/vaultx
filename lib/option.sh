@@ -183,7 +183,7 @@ delete_entry() {
 # Backup goes to BACKUP_DIR or falls back to $HOME
 #########################################################
 backup_vault() {
-  ts=$(date +"%Y-%m-%dT%H-%M-%S")
+  ts=$(date +"%Y-%m-%dT-%H-%M-%S")
   mkdir -p "$BACKUP_DIR" 
   backup="${BACKUP_DIR:-$HOME}/$vault_choice-$ts.zip"
   zip -rq "$backup" "$VAULT_DIR"
