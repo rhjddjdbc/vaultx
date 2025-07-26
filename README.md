@@ -84,6 +84,16 @@ MAX_ATTEMPTS=5                      # Max allowed login attempts before lockout
 LOCKOUT_DURATION=600                # Duration of lockout in seconds after failures
 ```
 
+## Installation for Arch Linux Users
+
+You can build and install VaultX directly from the provided PKGBUILD:
+
+```bash
+git clone https://github.com/rhjddjdbc/vaultx-arch-PKGBUILD.git
+cd vaultx-arch-PKGBUILD
+makepkg -si
+```
+
 ---
 
 ## Usage
