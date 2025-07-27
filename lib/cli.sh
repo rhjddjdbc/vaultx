@@ -205,7 +205,7 @@ cli_password_input() {
 # CLI version of vault backup functionality
 ############################################
 cli_backup_vault() {
-  ts=$(date +"%Y-%m-%dT-%H-%M-%S")
+  ts=$(date +"%Y-%m-%dT_%H:%M:%S")
   dest="${BACKUP_DIR:-$HOME}"
   backup_path="$dest/$vault_choice-$ts.zip"
 
@@ -236,7 +236,7 @@ cli_backup_vault() {
 cli_backup_all_vaults() {
   base_dir="${VAULT_DIR:-vault}"
   dest="${BACKUP_DIR:-$HOME}"
-  ts=$(date +"%Y-%m-%dT-%H-%M-%S")
+  ts=$(date +"%Y-%m-%dT_%H:%M:%S")
   backup_file="$dest/all-vaults-$ts.zip"
 
   if ! command -v zip >/dev/null; then
