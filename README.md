@@ -107,12 +107,13 @@ Run the script:
 ./vaultx.sh
 ```
 
+At startup, VaultX prompts you to select or create a vault, then shows the main menu:
+
 ### Help function
 ```bash
 ./vaultx.sh --help
 ./vaultx.sh -h
 ```
-At startup, VaultX prompts you to select or create a vault, then shows the main menu:
 
 ### Main Menu Options
 
