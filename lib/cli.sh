@@ -98,7 +98,7 @@ cli_get_entry() {
 
   if ! prompt_and_verify_password; then
     echo "Master password verification failed." >&2
-    "CLI: FAILED AUTHENTICATION by decrypting '$ENTRY_CLI'." 
+    log_action "CLI: FAILED AUTHENTICATION by decrypting '$ENTRY_CLI'." 
     exit 1
   fi
 
