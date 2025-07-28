@@ -16,7 +16,7 @@ OPTIONS:
   -v, --vault VAULT          Specify vault name (e.g., default)
 
   -a, --action ACTION        Action to perform:
-                               add, get, delete, backup, audit
+                               add, get, delete, backup, list
 
   -e, --entry ENTRY          Entry name (used with add, get, delete)
 
