@@ -101,6 +101,12 @@ makepkg -si
 
 ## Usage
 
+### Help function
+```bash
+./vaultx.sh --help
+./vaultx.sh -h
+```
+
 Run the script:
 
 ```bash
@@ -108,12 +114,6 @@ Run the script:
 ```
 
 At startup, VaultX prompts you to select or create a vault, then shows the main menu:
-
-### Help function
-```bash
-./vaultx.sh --help
-./vaultx.sh -h
-```
 
 ### Main Menu Options
 
