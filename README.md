@@ -209,7 +209,7 @@ VaultX includes a logging system that records all significant actions for auditi
 
 ### What is logged
 
-- Vault and entry operations (create, edit, decrypt, delete, backup)
+- Vault and entry operations (create, edit, decrypt, delete)
 - Authentication attempts, including failures
 - Timestamp for every event
 - Vault and entry references (never the actual password or decrypted content)
@@ -219,10 +219,12 @@ VaultX includes a logging system that records all significant actions for auditi
 VaultX does not log sensitive information such as plaintext passwords, decrypted content, or master passwords.
 
 ### Example log output
+```bash
 [2025-07-28 20:23:44] [user:user] Interactive: Selected action: 'Save new entry', vault: 'job'.
 [2025-07-28 20:23:59] [user:user] Interactive: entry: 'github'
 [2025-07-28 20:24:06] [user:user] Interactive: Selected action: 'Decrypt entry', vault: 'job'.
 [2025-07-28 20:24:19] [user:user] Interactive: FAILED AUTHENTICATION by decrypting '~/.vault/job/github.bin'.
+```
 
 ---
 
