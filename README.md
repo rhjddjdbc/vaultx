@@ -20,7 +20,7 @@
 * **Secure Memory Cleanup**: Temporary variables are zeroed and unset after usage
 * **script/cli mode**: for add, get, delete, audit, Backup vault/ all vaults
 * **Action Logging**: All major operations are logged with timestamps, including vault access, entry changes, and failed authentications. No passwords are ever logged.
-
+* **Help function**: Outputs a documentation.
 ---
 
 ## Requirements
@@ -107,6 +107,11 @@ Run the script:
 ./vaultx.sh
 ```
 
+### Help function
+```bash
+./vaultx.sh --help
+./vaultx.sh -h
+```
 At startup, VaultX prompts you to select or create a vault, then shows the main menu:
 
 ### Main Menu Options
