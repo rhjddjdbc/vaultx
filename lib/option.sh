@@ -53,7 +53,7 @@ decrypt_entry() {
   hmac_file="${file%.bin}.hmac"
   [[ ! -f "$hmac_file" ]] && { echo "HMAC file missing for entry." >&2; exit 1; }
 
-  prompt_and_verify_password || log_action "Interactive: FAILED AUTHENTICATION by decrypting '$selected'." || exit 1
+  prompt_and_verify_password || exit 1
 
   expected=$(awk '{print $1}' "$hmac_file")
   actual=$(openssl dgst -sha256 -mac HMAC -macopt key:file:/dev/fd/3 "$file" 3<<<"$MASTER" | awk '{print $2}')
@@ -65,6 +65,7 @@ decrypt_entry() {
 
   decrypted=$(grep -v '^#' "$file" | openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -salt -a -pass fd:3 3<<<"$MASTER") || {
     echo "Decryption failed." >&2
+  log_action "Interactive: FAILED AUTHENTICATION by decrypting '$selected'."
     secure_unset
     exit 1
   }
