@@ -48,8 +48,8 @@ run_cli_mode() {
     backup)
       cli_backup_vault
       ;;
-    audit)
-      cli_audit_vault
+    list)
+      cli_list_vault
       ;;
     *)
       echo "Invalid CLI action. Use: add, get, delete, backup, backup-all, audit" >&2
@@ -57,6 +57,7 @@ run_cli_mode() {
       ;;
   esac
 
+  log_action "CLI: Action: '$ACTION_CLI', Vaul: '$vault_choice', Entry: '$ENTRY_CLI'"
 }
 
 #########################################
@@ -65,6 +66,7 @@ run_cli_mode() {
 cli_add_entry() {
   if ! prompt_and_verify_password; then
     echo "Master password verification failed." >&2
+    log_action "CLI: FAILED AUTHENTICATION by saving new password." 
     exit 1
   fi
 
@@ -96,6 +98,7 @@ cli_get_entry() {
 
   if ! prompt_and_verify_password; then
     echo "Master password verification failed." >&2
+    "CLI: FAILED AUTHENTICATION by decrypting '$ENTRY_CLI'." 
     exit 1
   fi
 
@@ -256,10 +259,10 @@ cli_backup_all_vaults() {
 }
 
 #####################################
-# CLI audit: list entries with dates
+# CLI: list entries with dates
 #####################################
-cli_audit_vault() {
-  echo "Vault audit for '$vault_choice':"
+cli_list_vault() {
+  echo "Vault list for '$vault_choice':"
   echo
 
   if [[ ! -d "$VAULT_DIR" ]]; then
