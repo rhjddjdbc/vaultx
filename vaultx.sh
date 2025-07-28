@@ -97,6 +97,7 @@ source "$SCRIPT_DIR/lib/pass.sh"
 source "$SCRIPT_DIR/lib/tools.sh"
 source "$SCRIPT_DIR/lib/cli.sh"
 source "$SCRIPT_DIR/lib/vault.sh"
+source "$SCRIPT_DIR/lib/logger.sh"
 
 ####################
 # CLI Mode Execution
@@ -177,47 +178,58 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 # Main Menu – Interactive Mode
 ##############################
 main_menu() {
-  if [[ "$NEW_VAULT_CREATED" == true ]]; then
-    echo "New vault created. Please add your first entry."
-    save_new_entry
-    echo "First entry saved. Exiting now."
-    exit 0
-  fi
+  local vault="${VAULT:-unknown}"
+  local entry="${ENTRY_CLI:-none}"
 
+  # Aktion auswählen
   action=$(printf "%s\n" \
     "Save new entry" \
     "Decrypt entry" \
     "Edit existing entry" \
     "Delete entry" \
     "Backup vault" \
-    "Audit vault" \
+    "List vault" \
     "Exit" \
   | fzf --prompt="Select action: ")
 
-  [[ -z "$action" ]] && echo "No action selected." >&2 && exit 1
-
+  if [[ -z "$action" ]]; then
+    echo "No action selected." >&2
+    exit 1
+  fi
   case "$action" in
     "Save new entry")
+      log_action "Interactive: Selected action: '$action', vault: '$vault_choice'." 
       save_new_entry
+      log_action "Interactive: entry: '$selected'"
       ;;
     "Decrypt entry")
+      log_action "Interactive: Selected action: '$action', vault: '$vault_choice'." 
       decrypt_entry
+      log_action "Interactive: entry: '$selected'"
       ;;
     "Edit existing entry")
+      log_action "Interactive: Selected action: '$action', vault: '$vault_choice'." 
       edit_entry
+      log_action "Interactive: entry: '$selected'"
       ;;
     "Delete entry")
+      log_action "Interactive: Selected action: '$action', vault: '$vault_choice'." 
       delete_entry
+      log_action "Interactive: entry: '$selected'"
       ;;
     "Backup vault")
       backup_vault
       ;;
-    "Audit vault")
-      audit_vault
+    "List vault")
+      list_vault
       ;;
     "Exit")
       echo "Exiting."
       exit 0
+      ;;
+    *)
+      echo "Unknown action." >&2
+      exit 1
       ;;
   esac
 }
