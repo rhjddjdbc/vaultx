@@ -65,7 +65,7 @@ decrypt_entry() {
 
   decrypted=$(grep -v '^#' "$file" | openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -salt -a -pass fd:3 3<<<"$MASTER") || {
     echo "Decryption failed." >&2
-  log_action "Interactive: FAILED AUTHENTICATION by decrypting '$selected'."
+    log_action "Interactive: FAILED AUTHENTICATION by decrypting '$selected'."
     secure_unset
     exit 1
   }
