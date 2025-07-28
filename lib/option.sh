@@ -7,17 +7,18 @@
 save_new_entry() {
   if ! prompt_and_verify_password; then
     echo "Master password verification failed. Exiting..." >&2
+    log_action "Interactive: FAILED AUTHENTICATION by saving new password." 
     exit 1
   fi
 
-  read -t 30 -r -p "Entry name for '$vault_choice' vault (e.g. github) [timeout 30s]: " name || { echo -e "\nTimeout reached." >&2; exit 1; }
-  [[ -z "$name" || ! "$name" =~ ^[A-Za-z0-9._-]+$ ]] && { echo "Invalid entry name." >&2; exit 1; }
+  read -t 30 -r -p "Entry name for '$vault_choice' vault (e.g. github) [timeout 30s]: " selected || { echo -e "\nTimeout reached." >&2; exit 1; }
+  [[ -z "$selected" || ! "$selected" =~ ^[A-Za-z0-9._-]+$ ]] && { echo "Invalid entry name." >&2; exit 1; }
 
-  vault_file="$VAULT_DIR/$name.bin"
+  vault_file="$VAULT_DIR/$selected.bin"
   counter=2
   while [[ -f "$vault_file" ]]; do
-    vault_file="$VAULT_DIR/$name-$counter.bin"
-    name="$name-$counter"
+    vault_file="$VAULT_DIR/$selected-$counter.bin"
+    name="$selected-$counter"
     ((counter++))
   done
 
@@ -36,7 +37,7 @@ save_new_entry() {
       -out "$vault_file" -pass fd:3 3<<<"$MASTER"
 
   hmac=$(openssl dgst -sha256 -mac HMAC -macopt key:file:/dev/fd/3 "$vault_file" 3<<<"$MASTER" | awk '{print $2}')
-  echo "$hmac  $(basename "$vault_file")" > "$VAULT_DIR/$name.hmac"
+  echo "$hmac  $(basename "$vault_file")" > "$VAULT_DIR/$selected.hmac"
   secure_unset
 }
 
@@ -52,7 +53,7 @@ decrypt_entry() {
   hmac_file="${file%.bin}.hmac"
   [[ ! -f "$hmac_file" ]] && { echo "HMAC file missing for entry." >&2; exit 1; }
 
-  prompt_and_verify_password || exit 1
+  prompt_and_verify_password || log_action "Interactive: FAILED AUTHENTICATION by decrypting '$selected'." || exit 1
 
   expected=$(awk '{print $1}' "$hmac_file")
   actual=$(openssl dgst -sha256 -mac HMAC -macopt key:file:/dev/fd/3 "$file" 3<<<"$MASTER" | awk '{print $2}')
@@ -124,6 +125,7 @@ edit_entry() {
 
   if ! prompt_and_verify_password; then
     echo "Master password verification failed." >&2
+    log_action "Interactive: FAILED AUTHENTICATION by editing '$selected'." 
     return
   fi
 
@@ -202,10 +204,10 @@ backup_vault() {
   echo "Backup for vault '$vault_choice' saved at $backup."
 }
 
-#####################################################
-# Audit vault contents - list entries with timestamps
-#####################################################
-audit_vault() {
+##############################
+# list entries with timestamps
+##############################
+list_vault() {
   echo "Listing contents of '$vault_choice' vault:"
   find "$VAULT_DIR" -maxdepth 1 -name "*.bin" | while read -r entry; do
     label=$(basename "$entry" .bin)
