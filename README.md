@@ -1,6 +1,6 @@
 # VaultX – Secure Command-Line Password Manager
 
-**VaultX** is a minimal, script-based password manager for the command line. It allows you to securely manage multiple isolated vaults, use strong encryption, perform password breach checks, and export QR codes—all within a transparent and portable Bash script.
+**VaultX** is a minimal, script-based password manager for the command line. It allows you to securely manage multiple isolated vaults, use strong encryption, perform password breach checks, export QR codes, **and now log all major actions** — all within a transparent and portable Bash script.
 
 ---
 
@@ -14,11 +14,12 @@
 * **Secure Password Generation**: Random password creation with configurable length
 * **Optional Breach Check**: Query Have I Been Pwned (HIBP) API using SHA-1 k-anonymity model
 * **Vault Backups**: Vault directories are zipped with secure permissions (`chmod 600`)
-* **Vault Audit**: Overview of stored entries with last-modified timestamps
+* **Vault List**: Overview of stored entries with last-modified timestamps
 * **QR Code Export**: Display password as ASCII QR code directly in the terminal
 * **Brute-Force Protection**: Lockout mechanism with exponential backoff on repeated failures
 * **Secure Memory Cleanup**: Temporary variables are zeroed and unset after usage
 * **script/cli mode**: for add, get, delete, audit, Backup vault/ all vaults
+* **Action Logging**: All major operations are logged with timestamps, including vault access, entry changes, and failed authentications. No passwords are ever logged.
 
 ---
 
@@ -73,15 +74,17 @@ Example `config.env`:
 # Base directories
 VAULT_DIR="$HOME/.vault"            # Directory where vaults are stored
 BACKUP_DIR="$HOME/vault_backups"    # Location for encrypted vault backups
+LOG_FILE="$HOME/.vaultx.log"        # log file
 
 # Password options
-PASSWORD_LENGTH=24                  # Default length for generated passwords
+PASSWORD_LENGTH=36                  # Default length for generated passwords
 PASSWORD_COST=16                    # BCrypt cost factor for master hash strength
-HIBP_CHECK_CLI=false                # Auto breach check for cli mode
+HIBP_CHECK_CLI=true                 # Auto breach check for cli mode
 
 # Security settings
 MAX_ATTEMPTS=5                      # Max allowed login attempts before lockout
 LOCKOUT_DURATION=600                # Duration of lockout in seconds after failures
+LOGGING_ENABLED=true                # enabeling logging
 ```
 
 ## Installation for Arch Linux Users
@@ -136,7 +139,7 @@ At startup, VaultX prompts you to select or create a vault, then shows the main 
 
    * Creates a ZIP archive of the vault, timestamped and permission-restricted, in the configured backup directory
 
-6. **Audit Vault**
+6. **List Vault**
 
    * Displays all entries with last-modified timestamps
 
@@ -173,7 +176,8 @@ Located in `~/.config/vaultx/config.env`:
 | `BACKUP_DIR`       | Directory where ZIP backups are saved                            |
 | `MAX_ATTEMPTS`     | Max failed login attempts before lockout (default: 5)            |
 | `LOCKOUT_DURATION` | Lockout duration in seconds after failed attempts (default: 600) |
-
+| `LOGGING_ENABLED`  | Enable or disable logging (`true` or `false`)                    |
+| `LOG_FILE`         | Path to the log file                                             |
 ---
 
 ## Security Overview
@@ -199,6 +203,28 @@ Located in `~/.config/vaultx/config.env`:
 
 ---
 
+## Logging Feature
+
+VaultX includes a logging system that records all significant actions for auditing and debugging.
+
+### What is logged
+
+- Vault and entry operations (create, edit, decrypt, delete, backup)
+- Authentication attempts, including failures
+- Timestamp for every event
+- Vault and entry references (never the actual password or decrypted content)
+
+### Security Note
+
+VaultX does not log sensitive information such as plaintext passwords, decrypted content, or master passwords.
+
+### Example log output
+[2025-07-28 20:23:44] [user:user] Interactive: Selected action: 'Save new entry', vault: 'job'.
+[2025-07-28 20:23:59] [user:user] Interactive: entry: 'github'
+[2025-07-28 20:24:06] [user:user] Interactive: Selected action: 'Decrypt entry', vault: 'job'.
+[2025-07-28 20:24:19] [user:user] Interactive: FAILED AUTHENTICATION by decrypting '~/.vault/job/github.bin'.
+
+---
 
 ## CLI Mode Usage
 
@@ -270,12 +296,12 @@ Backup **all vaults** using the `--all` flag:
 
 ---
 
-### 5. **Audit vault**
+### 5. **List vault**
 
 Displays all entries with last-modified timestamps:
 
 ```bash
-./vaultx.sh --cli --vault default --action audit
+./vaultx.sh --cli --vault default --action list
 ```
 
 ---
