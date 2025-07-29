@@ -218,9 +218,11 @@ main_menu() {
       log_action "Interactive: entry: '$selected'"
       ;;
     "Backup vault")
+      log_action "Interactive: Selected action: '$action', vault: '$vault_choice'."
       backup_vault
       ;;
     "List vault")
+      log_action "Interactive: Selected action: '$action', vault: '$vault_choice'."
       list_vault
       ;;
     "Exit")
