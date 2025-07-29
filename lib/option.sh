@@ -6,7 +6,6 @@
 ############################################################
 save_new_entry() {
   if ! prompt_and_verify_password; then
-    echo "Master password verification failed." >&2
     log_action "Interactive: FAILED AUTHENTICATION by saving new password." 
     exit 1
   fi
@@ -54,7 +53,6 @@ decrypt_entry() {
   [[ ! -f "$hmac_file" ]] && { echo "HMAC file missing for entry." >&2; exit 1; }
 
   if ! prompt_and_verify_password; then
-      echo "Master password verification failed." >&2
       log_action "Interactive: FAILED AUTHENTICATION by decrypting '$selected'."
       exit 1
   fi
@@ -128,7 +126,6 @@ edit_entry() {
   name=$(basename "$file" .bin)
 
   if ! prompt_and_verify_password; then
-    echo "Master password verification failed." >&2
     log_action "Interactive: FAILED AUTHENTICATION by editing '$selected'." 
     return
   fi
