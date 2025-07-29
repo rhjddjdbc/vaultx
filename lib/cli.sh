@@ -8,6 +8,7 @@ run_cli_mode() {
   vault_choice="$VAULT_CLI"
   if [[ "$ACTION_CLI" == "backup" && "$ALL_CLI" == true ]]; then
     cli_backup_all_vaults
+    log_action "CLI: Action: '$ACTION_CLI' all"
     return
  fi
 
@@ -38,18 +39,23 @@ run_cli_mode() {
   case "$ACTION_CLI" in
     add)
       cli_add_entry
+      log_action "CLI: Action: '$ACTION_CLI', Vaul: '$vault_choice', Entry: '$ENTRY_CLI'"
       ;;
     get)
       cli_get_entry
+      log_action "CLI: Action: '$ACTION_CLI', Vaul: '$vault_choice', Entry: '$ENTRY_CLI'"
       ;;
     delete)
       cli_delete_entry
+      log_action "CLI: Action: '$ACTION_CLI', Vaul: '$vault_choice', Entry: '$ENTRY_CLI'"
       ;;
     backup)
       cli_backup_vault
+      log_action "CLI: Action: '$ACTION_CLI', Vaul: '$vault_choice'"
       ;;
     list)
       cli_list_vault
+      log_action "CLI: Action: '$ACTION_CLI', Vaul: '$vault_choice'"
       ;;
     *)
       echo "Invalid CLI action. Use: add, get, delete, backup, backup-all, list" >&2
@@ -57,7 +63,6 @@ run_cli_mode() {
       ;;
   esac
 
-  log_action "CLI: Action: '$ACTION_CLI', Vaul: '$vault_choice', Entry: '$ENTRY_CLI'"
 }
 
 #########################################
@@ -65,7 +70,6 @@ run_cli_mode() {
 #########################################
 cli_add_entry() {
   if ! prompt_and_verify_password; then
-    echo "Master password verification failed." >&2
     log_action "CLI: FAILED AUTHENTICATION by saving new password." 
     exit 1
   fi
@@ -97,7 +101,6 @@ cli_get_entry() {
   [[ ! -f "$file" ]] && { echo "Entry '$ENTRY_CLI' not found." >&2; exit 1; }
 
   if ! prompt_and_verify_password; then
-    echo "Master password verification failed." >&2
     log_action "CLI: FAILED AUTHENTICATION by decrypting '$ENTRY_CLI'." 
     exit 1
   fi
