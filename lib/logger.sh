@@ -1,5 +1,8 @@
 # lib/logger.sh
 
+#################
+# logger function 
+#################
 # Default values
 LOGGING_ENABLED="${LOGGING_ENABLED:-false}"
 LOG_FILE="${LOG_FILE:-$HOME/.vaultx.log}"
