@@ -52,7 +52,7 @@ run_cli_mode() {
       cli_list_vault
       ;;
     *)
-      echo "Invalid CLI action. Use: add, get, delete, backup, backup-all, audit" >&2
+      echo "Invalid CLI action. Use: add, get, delete, backup, backup-all, list" >&2
       exit 1
       ;;
   esac
