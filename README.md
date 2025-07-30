@@ -19,7 +19,7 @@
 * **Brute-Force Protection**: Lockout mechanism with exponential backoff on repeated failures
 * **Secure Memory Cleanup**: Temporary variables are zeroed and unset after usage
 * **script/cli mode**: for add, get, delete, audit, Backup vault/ all vaults
-* **Action Logging**: All major operations are logged with timestamps, including vault access, entry changes, and failed authentications. No passwords are ever logged.
+* **Action Logging**: All major operations are logged with timestamps, including vault access, entry changes, Vault creation, password output that is not just text and failed authentications.
 * **Help function**: Outputs a documentation.
 ---
 
