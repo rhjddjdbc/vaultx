@@ -35,7 +35,7 @@ select_vault() {
         echo "Invalid vault name." >&2
         exit 1
       fi
-      log_action "Create new vault'$new_vault'"
+      log_action "Create new Vault: '$new_vault'"
       vault_choice="$new_vault"
       mkdir -p "$VAULT_DIR/$vault_choice"
       chmod 700 "$VAULT_DIR/$vault_choice"
