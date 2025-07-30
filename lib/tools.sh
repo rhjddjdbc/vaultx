@@ -19,8 +19,8 @@ hash_equals() {
 # Supports wl-copy and xclip
 #########################################################
 copy_to_clipboard() {
+  log_action "Copy to clipboard"
   local timeout=30
-
   if command -v wl-copy &>/dev/null; then
     echo "$1" | wl-copy
     echo "Copied to clipboard using wl-copy. It will be cleared in $timeout seconds." >&2
@@ -41,6 +41,7 @@ copy_to_clipboard() {
 # Requires qrencode; clears after 30 seconds
 ###########################################################
 display_ascii_qr_temp() {
+  log_action "Display Qr code"
   local secret="$1"
   if command -v qrencode &>/dev/null; then
     echo "$secret" | qrencode -t ANSIUTF8
