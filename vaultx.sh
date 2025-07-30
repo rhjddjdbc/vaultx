@@ -198,32 +198,28 @@ main_menu() {
   fi
   case "$action" in
     "Save new entry")
-      log_action "Interactive: Selected action: '$action', vault: '$vault_choice'." 
       save_new_entry
-      log_action "Interactive: entry: '$selected'"
+      log_action "Interactive: Selected action: '$action', vault: '$vault_choice' entry: '$selected'" 
       ;;
     "Decrypt entry")
-      log_action "Interactive: Selected action: '$action', vault: '$vault_choice'." 
       decrypt_entry
-      log_action "Interactive: entry: '$selected'"
+      log_action "Interactive: Selected action: '$action', vault: '$vault_choice' entry: '$selected'" 
       ;;
     "Edit existing entry")
-      log_action "Interactive: Selected action: '$action', vault: '$vault_choice'." 
       edit_entry
-      log_action "Interactive: entry: '$selected'"
+      log_action "Interactive: Selected action: '$action', vault: '$vault_choice' entry: '$selected'" 
       ;;
     "Delete entry")
-      log_action "Interactive: Selected action: '$action', vault: '$vault_choice'." 
       delete_entry
-      log_action "Interactive: entry: '$selected'"
+      log_action "Interactive: Selected action: '$action', vault: '$vault_choice' entry: '$selected'" 
       ;;
     "Backup vault")
-      log_action "Interactive: Selected action: '$action', vault: '$vault_choice'."
       backup_vault
+      log_action "Interactive: Selected action: '$action', vault: '$vault_choice'."
       ;;
     "List vault")
-      log_action "Interactive: Selected action: '$action', vault: '$vault_choice'."
       list_vault
+      log_action "Interactive: Selected action: '$action', vault: '$vault_choice'."
       ;;
     "Exit")
       echo "Exiting."
