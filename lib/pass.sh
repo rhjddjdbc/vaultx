@@ -102,17 +102,6 @@ prompt_and_verify_password() {
   # Verify password WITHOUT using -C (fix)
   if htpasswd -vbB "$tmp" dummy "$MASTER" &>/dev/null; then
     rm -f "$tmp" "$FAIL_COUNT_FILE" "$LAST_FAIL_FILE"
-
-    # Optional: rehash with higher cost if desired
-    # if [[ "$STORED_HASH" =~ ^\$2[aby]?\$([0-9]{2})\$ ]]; then
-    #   current_cost="${BASH_REMATCH[1]}"
-    #   if (( current_cost < PASSWORD_COST )); then
-    #     NEW_HASH=$(htpasswd -nbB -C "$PASSWORD_COST" dummy "$MASTER" | cut -d: -f2)
-    #     echo "$NEW_HASH" > "$MASTER_HASH_FILE"
-    #     chmod 600 "$MASTER_HASH_FILE"
-    #   fi
-    # fi
-
     return 0
   else
     rm -f "$tmp"
@@ -147,6 +136,7 @@ check_pwned_password() {
   response=$(curl -s "https://api.pwnedpasswords.com/range/$prefix")
   if [[ -z "$response" ]]; then
     echo "Warning: Unable to reach HIBP API. Password was not checked." >&2
+    log_action "Warning: Unable to reach HIBP API. Password was not checked." >&2
     return 0  # return 0 if no breach check is done (i.e., API not reachable)
   fi
 
@@ -156,6 +146,7 @@ check_pwned_password() {
     if [[ "$hash" == "$suffix" ]]; then
        
        echo -e "\033[1;33mPassword got breached.\033[0m" >&2
+       log_action "Password got breached Vault: '$vault_choice', entry: '$selected'." 
        return 1  # Return 1 to signal the password should not be saved
     fi
    done <<< "$response"
