@@ -227,10 +227,13 @@ VaultX does not log sensitive information such as plaintext passwords, decrypted
 
 ### Example log output
 ```bash
-[2025-07-28 20:23:44] [user:user] Interactive: Selected action: 'Save new entry', vault: 'job'.
-[2025-07-28 20:23:59] [user:user] Interactive: entry: 'github'
-[2025-07-28 20:24:06] [user:user] Interactive: Selected action: 'Decrypt entry', vault: 'job'.
-[2025-07-28 20:24:19] [user:user] Interactive: FAILED AUTHENTICATION by decrypting '~/.vault/job/github.bin'.
+[2025-07-30 17:09:42] [user:user] Interactive: FAILED AUTHENTICATION by saving new password in Vault: 'default'.
+[2025-07-30 17:09:59] [user:user] Interactive: Selected action: 'Decrypt entry', vault: 'default'.
+[2025-07-30 17:10:12] [user:user] Interactive: FAILED AUTHENTICATION by decrypting '~/.vault/default/github.bin' in Vault: 'default'.
+[2025-07-30 17:12:25] [user:user] Interactive: Selected action: 'List vault', vault: 'default'.
+[2025-07-30 17:12:54] [user:user] Interactive: Selected action: 'Delete entry', vault: 'job' entry: '~/.vault/job/asdfjj.bin'
+[2025-07-30 17:13:32] [user:user] Interactive: FAILED AUTHENTICATION by editing '~/.vault/job/slack.bin' in Vault: 'job'.
+[2025-07-30 17:13:32] [user:user] Interactive: Selected action: 'Edit existing entry', vault: 'job' entry: '~/.vault/job/slack.bin'
 ```
 
 ---
