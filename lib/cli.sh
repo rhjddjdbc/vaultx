@@ -20,6 +20,7 @@ run_cli_mode() {
   # Ensure the vault directory exists
   if [[ ! -d "$VAULT_DIR" ]]; then
     echo "Vault '$vault_choice' not found. Creating it now..."
+    log_action "Create new Vault: '$vault_choice'"
     mkdir -p "$VAULT_DIR" || { echo "Failed to create vault directory." >&2; exit 1; }
     chmod 700 "$VAULT_DIR"
   fi
@@ -39,23 +40,23 @@ run_cli_mode() {
   case "$ACTION_CLI" in
     add)
       cli_add_entry
-      log_action "CLI: Action: '$ACTION_CLI', Vaul: '$vault_choice', Entry: '$ENTRY_CLI'"
+      log_action "CLI: Action: '$ACTION_CLI', Vault: '$vault_choice', Entry: '$ENTRY_CLI'"
       ;;
     get)
       cli_get_entry
-      log_action "CLI: Action: '$ACTION_CLI', Vaul: '$vault_choice', Entry: '$ENTRY_CLI'"
+      log_action "CLI: Action: '$ACTION_CLI', Vault: '$vault_choice', Entry: '$ENTRY_CLI'"
       ;;
     delete)
       cli_delete_entry
-      log_action "CLI: Action: '$ACTION_CLI', Vaul: '$vault_choice', Entry: '$ENTRY_CLI'"
+      log_action "CLI: Action: '$ACTION_CLI', Vault: '$vault_choice', Entry: '$ENTRY_CLI'"
       ;;
     backup)
       cli_backup_vault
-      log_action "CLI: Action: '$ACTION_CLI', Vaul: '$vault_choice'"
+      log_action "CLI: Action: '$ACTION_CLI', Vault: '$vault_choice'"
       ;;
     list)
       cli_list_vault
-      log_action "CLI: Action: '$ACTION_CLI', Vaul: '$vault_choice'"
+      log_action "CLI: Action: '$ACTION_CLI', Vault: '$vault_choice'"
       ;;
     *)
       echo "Invalid CLI action. Use: add, get, delete, backup, backup-all, list" >&2
