@@ -6,7 +6,7 @@
 ############################################################
 save_new_entry() {
   if ! prompt_and_verify_password; then
-    log_action "Interactive: FAILED AUTHENTICATION by saving new password." 
+    log_action "Interactive: FAILED AUTHENTICATION by saving new password in Vault: '$vault_choice'." 
     exit 1
   fi
 
@@ -53,7 +53,7 @@ decrypt_entry() {
   [[ ! -f "$hmac_file" ]] && { echo "HMAC file missing for entry." >&2; exit 1; }
 
   if ! prompt_and_verify_password; then
-      log_action "Interactive: FAILED AUTHENTICATION by decrypting '$selected'."
+      log_action "Interactive: FAILED AUTHENTICATION by decrypting '$selected' in Vault: '$vault_choice'."
       exit 1
   fi
 
@@ -126,7 +126,7 @@ edit_entry() {
   name=$(basename "$file" .bin)
 
   if ! prompt_and_verify_password; then
-    log_action "Interactive: FAILED AUTHENTICATION by editing '$selected'." 
+    log_action "Interactive: FAILED AUTHENTICATION by editing '$selected' in Vault: '$vault_choice'." 
     return
   fi
 
