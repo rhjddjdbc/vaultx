@@ -64,57 +64,163 @@ generate_password_prompt() {
 # Prompt and verify master password
 # Handles lockout logic on repeated failures and compares hashed passwords
 ##########################################################################
+LOCKOUT_STATE_FILE="$VAULT_DIR/.lockout_state"
+LOCKOUT_SECRET_FILE="$VAULT_DIR/.lockout_secret"
+
+# === Initialize lockout secret if missing ===
+init_lockout_secret() {
+  mkdir -p "$VAULT_DIR"
+  if [[ ! -f "$LOCKOUT_SECRET_FILE" ]]; then
+    head -c 32 /dev/urandom | hexdump -v -e '/1 "%02x"' > "$LOCKOUT_SECRET_FILE"
+    chmod 600 "$LOCKOUT_SECRET_FILE"
+  fi
+}
+
+# === Load lockout secret from file ===
+load_lockout_secret() {
+  LOCKOUT_SECRET=$(<"$LOCKOUT_SECRET_FILE")
+}
+
+# === Calculate HMAC for integrity check ===
+calc_hmac() {
+  local data="$1"
+  echo -n "$data" | openssl dgst -sha256 -hmac "$LOCKOUT_SECRET" | awk '{print $2}'
+}
+
+# === Read lockout state from file ===
+TAMPER_LOCK_FILE="$VAULT_DIR/.tamper_lock"
+
+read_lockout_state() {
+  local now
+  now=$(date +%s)
+
+  # If tamper lock file exists, check if timer expired
+  if [[ -f "$TAMPER_LOCK_FILE" ]]; then
+    local tamper_start
+    tamper_start=$(<"$TAMPER_LOCK_FILE")
+    local elapsed=$(( now - tamper_start ))
+
+    if (( elapsed < TAMPER_LOCKOUT_DURATION )); then
+      local remaining=$(( TAMPER_LOCKOUT_DURATION - elapsed ))
+      echo "Vault tampering detected. Retry in $remaining seconds." >&2
+      exit 1
+    else
+      echo "Tamper lock expired. Creating new lockout state." >&2
+      rm -f "$TAMPER_LOCK_FILE"
+      write_lockout_state 0 0
+      global_fails=0
+      global_last=0
+      return
+    fi
+  fi
+
+  if [[ -f "$LOCKOUT_STATE_FILE" ]]; then
+    local line
+    line=$(<"$LOCKOUT_STATE_FILE")
+    IFS=":" read -r fails last sig <<< "$line"
+    local data="$fails:$last"
+    local expected_sig
+    expected_sig=$(calc_hmac "$data")
+
+    if [[ "$sig" != "$expected_sig" ]]; then
+      echo "Lockout state was manipulated!" >&2
+      global_fails=9999
+      global_last=$now
+      return
+    fi
+
+    if (( fails >= MAX_ATTEMPTS )); then
+      if (( now - last < LOCKOUT_DURATION )); then
+        global_fails=$fails
+        global_last=$last
+        return
+      else
+        # Lockout expired → reset
+        fails=0
+        last=0
+        write_lockout_state "$fails" "$last"
+      fi 
+    fi
+
+    global_fails=$fails
+    global_last=$last
+
+  elif [[ ! -f "$MASTER_HASH_FILE" ]]; then
+    # First vault setup – allow access
+    global_fails=0
+    global_last=0
+
+  else
+    echo "Lockout state file missing! Creating new state with a one-time lockout." >&2
+    echo "A one-time lockout of $TAMPER_LOCKOUT_DURATION seconds will be applied." >&2
+    echo "$now" > "$TAMPER_LOCK_FILE"
+    exit 1
+  fi
+}
+
+
+write_lockout_state() {
+  local fails="$1"
+  local last="$2"
+  local data="$fails:$last"
+  local sig
+  sig=$(calc_hmac "$data")
+  echo "$fails:$last:$sig" > "$LOCKOUT_STATE_FILE"
+  chmod 600 "$LOCKOUT_STATE_FILE"
+}
+
 prompt_and_verify_password() {
-  # Check for lockout
-  if [[ -f $FAIL_COUNT_FILE && -f $LAST_FAIL_FILE ]]; then
-    fails=$(<"$FAIL_COUNT_FILE")
-    last=$(<"$LAST_FAIL_FILE")
-    now=$(date +%s)
-    if (( fails >= MAX_ATTEMPTS && now - last < LOCKOUT_DURATION )); then
-      wait_time=$(( LOCKOUT_DURATION - (now - last) ))
+  local now
+  now=$(date +%s)
+
+  read_lockout_state  
+
+  if (( global_fails >= MAX_ATTEMPTS )); then
+    if (( now - global_last < LOCKOUT_DURATION )); then
+      local wait_time=$(( LOCKOUT_DURATION - (now - global_last) ))
       echo "Too many failed attempts. Retry in $wait_time seconds." >&2
       return 1
     fi
   fi
 
-  # Prompt user
   if ! read -t 60 -s -r -p "Master password for '$vault_choice' vault (timeout 60s): " MASTER; then
     echo -e "\nTimeout or no input. Aborting." >&2
     return 1
   fi
   echo
 
-  # First-time password setup
   if [[ ! -f "$MASTER_HASH_FILE" ]]; then
     HASHED=$(htpasswd -nbB -C "$PASSWORD_COST" dummy "$MASTER" | cut -d: -f2)
     echo "$HASHED" > "$MASTER_HASH_FILE"
     chmod 600 "$MASTER_HASH_FILE"
     echo "Master password initialized successfully for '$vault_choice'." >&2
-    rm -f "$FAIL_COUNT_FILE" "$LAST_FAIL_FILE"
+    write_lockout_state 0 0
     return 0
   fi
 
-  # Load stored hash
   STORED_HASH=$(<"$MASTER_HASH_FILE")
+  local tmp
   tmp=$(mktemp)
   printf 'dummy:%s\n' "$STORED_HASH" > "$tmp"
 
-  # Verify password WITHOUT using -C (fix)
   if htpasswd -vbB "$tmp" dummy "$MASTER" &>/dev/null; then
-    rm -f "$tmp" "$FAIL_COUNT_FILE" "$LAST_FAIL_FILE"
+    rm -f "$tmp"
+    write_lockout_state 0 0
     return 0
   else
     rm -f "$tmp"
     now=$(date +%s)
-    prev=0
-    [[ -f "$FAIL_COUNT_FILE" ]] && prev=$(<"$FAIL_COUNT_FILE")
-    fails=$(( prev + 1 ))
-    echo "$fails" > "$FAIL_COUNT_FILE"
-    echo "$now" > "$LAST_FAIL_FILE"
-    backoff=$(( fails * 2 ))
+    global_fails=$((global_fails + 1))
+    if (( global_fails > MAX_ATTEMPTS )); then
+      global_fails=$MAX_ATTEMPTS
+    fi
+    write_lockout_state "$global_fails" "$now"
+
+    local backoff=$(( global_fails * 2 ))
     (( backoff > LOCKOUT_DURATION )) && backoff=$LOCKOUT_DURATION
     sleep "$backoff"
-    echo "Invalid master password for '$vault_choice'. Attempt $fails of $MAX_ATTEMPTS." >&2
+
+    echo "Invalid master password for '$vault_choice'. Attempt $global_fails of $MAX_ATTEMPTS." >&2
     return 1
   fi
 }
