@@ -58,25 +58,55 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
-#####################################
-# Configuration and Environment Setup
-#####################################
 
-# Determine home directory
-HOME="${HOME:-$(getent passwd "$(id -u -n)" | cut -d: -f6)}"
+###############
+# source config
+###############
 CONFIG_FILE="$HOME/.config/vaultx/config.env"
 
-# Load config file if present
-if [[ -f "$CONFIG_FILE" ]]; then
+# Check and fix file permissions and ownership if necessary
+check_and_fix_permissions() {
+  # Get the current permissions, owner, and group of the file
   perms=$(stat -c "%a" "$CONFIG_FILE")
-  if [[ "$perms" != "600" ]]; then
-    echo "WARNING: $CONFIG_FILE has permissions $perms. Fixing to 600." >&2
-    chmod 600 "$CONFIG_FILE"
+  owner=$(stat -c "%U" "$CONFIG_FILE")
+  group=$(stat -c "%G" "$CONFIG_FILE")
+
+  # Check if permissions are correct (644)
+  if [[ "$perms" != "644" ]]; then
+    echo "WARNING: The permissions for the config file are not correct. Setting them to 644." >&2
+    chmod 644 "$CONFIG_FILE"
   fi
-  # shellcheck disable=SC1090
+
+  # Check if the owner is root:root
+  if [[ "$owner" != "root" || "$group" != "root" ]]; then
+    echo "WARNING: The owner of the file is not correct. Setting the owner to root:root." >&2
+    if [[ -n "$ESC_CMD" ]]; then
+      $ESC_CMD chown root:root "$CONFIG_FILE"
+    else
+      echo "ERROR: No privilege escalation tool (sudo or doas) found to change ownership." >&2
+      exit 1
+    fi
+  fi
+}
+
+# Determine which privilege escalation tool to use (sudo or doas)
+if command -v doas &>/dev/null; then
+  ESC_CMD="doas"
+elif command -v sudo &>/dev/null; then
+  ESC_CMD="sudo"
+else
+  ESC_CMD=""
+fi
+
+# Check and fix the file permissions and ownership
+check_and_fix_permissions
+
+# Source the config file if it exists
+if [[ -f "$CONFIG_FILE" ]]; then
   source "$CONFIG_FILE"
 else
-  echo "No config found at $CONFIG_FILE. Using defaults." >&2
+  echo "ERROR: Config file not found!" >&2
+  exit 1
 fi
 
 # Default configuration values
@@ -107,17 +137,6 @@ if [[ "$CLI_MODE" == true ]]; then
 fi
 
 # NEW_VAULT_CREATED=false
-
-#####################################
-# Privilege Escalation Tool Detection
-#####################################
-if command -v doas &>/dev/null; then
-  ESC_CMD="doas"
-elif command -v sudo &>/dev/null; then
-  ESC_CMD="sudo"
-else
-  ESC_CMD=""
-fi
 
 ####################################
 # Protect /proc/self/fd from leakage
