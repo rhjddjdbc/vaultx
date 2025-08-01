@@ -6,6 +6,7 @@
 # Sets relevant vault paths and creates default if none exist
 #############################################################
 select_vault() {
+  declare -g NEW_VAULT_CREATED=false
   mkdir -p "$VAULT_DIR"
   cd "$VAULT_DIR" || exit 1
 
@@ -39,14 +40,19 @@ select_vault() {
       vault_choice="$new_vault"
       mkdir -p "$VAULT_DIR/$vault_choice"
       chmod 700 "$VAULT_DIR/$vault_choice"
+      
       echo "Vault '$vault_choice' created successfully."
       NEW_VAULT_CREATED=true
     fi
   fi
 
-  # Set vault paths for the selected or created vault
+  # Set vault paths
   VAULT_DIR="$VAULT_DIR/$vault_choice"
   MASTER_HASH_FILE="$VAULT_DIR/.master_hash"
   FAIL_COUNT_FILE="$VAULT_DIR/.fail_count"
   LAST_FAIL_FILE="$VAULT_DIR/.last_fail"
+  LOCKOUT_STATE_FILE="$VAULT_DIR/.lockout_state"
+  LOCKOUT_SECRET_FILE="$VAULT_DIR/.lockout_secret"
+init_lockout_secret
+load_lockout_secret
 }
