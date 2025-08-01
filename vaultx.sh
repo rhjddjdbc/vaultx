@@ -22,7 +22,6 @@ secure_unset() {
 
   unset HASHED STORED_HASH
 }
-
 ##################
 # Argument Parsing
 ##################
@@ -107,7 +106,7 @@ if [[ "$CLI_MODE" == true ]]; then
   exit 0
 fi
 
-NEW_VAULT_CREATED=false
+# NEW_VAULT_CREATED=false
 
 #####################################
 # Privilege Escalation Tool Detection
@@ -177,6 +176,14 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 ##############################
 # Main Menu – Interactive Mode
 ##############################
+if [[ "$NEW_VAULT_CREATED" == true ]]; then
+  echo "New vault '$vault_choice' created. Proceeding to save first entry..."
+  save_new_entry
+  log_action "Auto-prompted Save new entry for newly created vault: '$vault_choice'"
+  echo "Entry saved. Exiting."
+  exit 0
+fi
+
 main_menu() {
   local vault="${VAULT:-unknown}"
   local entry="${ENTRY_CLI:-none}"
