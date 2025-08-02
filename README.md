@@ -81,7 +81,7 @@ LOG_FILE="$HOME/.vaultx.log"        # log file
 # Password options
 PASSWORD_LENGTH=36                  # Default length for generated passwords
 PASSWORD_COST=16                    # BCrypt cost factor for master hash strength
-HIBP_CHECK_CLI=true                 # Auto breach check for cli mode
+HIBP_CHECK_CLI=false                # Auto breach check for cli mode
 
 # Security settings
 MAX_ATTEMPTS=5                      # Max allowed login attempts before lockout
