@@ -190,7 +190,6 @@ Located in `~/.config/vaultx/config.env`:
 ---
 
 ## Security Overview
-Hier ist die kompakte englische README-Erweiterung im Markdown-Format, fokussiert auf den lockout protection und config.env protection:
 
 ### Lockout Protection
 
