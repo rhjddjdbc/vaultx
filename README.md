@@ -190,6 +190,40 @@ Located in `~/.config/vaultx/config.env`:
 ---
 
 ## Security Overview
+Hier ist die kompakte englische README-Erweiterung im Markdown-Format, fokussiert auf den lockout protection und config.env protection:
+
+### Lockout Protection
+
+VaultX includes a tamper-resistant lockout system that protects against brute-force attacks:
+
+- After `MAX_ATTEMPTS` failed master password logins, the vault enters lockout for `LOCKOUT_DURATION` seconds.
+- Each vault stores its own lockout metadata in:
+```
+~/.vault/<vault>/ 
+  ├── .lockout_state      # Tracks failed attempts and last failure timestamp 
+  ├── .lockout_secret     # HMAC key to verify lockout file integrity 
+  └── .tamper_lock        # Temporary lock if tampering is detected
+```
+- `.lockout_state` is signed with an HMAC to detect file manipulation.
+- If the signature is invalid or the file is missing, a one-time tamper lock is applied (duration: `TAMPER_LOCKOUT_DURATION`).
+- Lockout files are set to `chmod 600`.
+
+> This mechanism ensures that vault access is protected even if an attacker tries to reset the state manually.
+
+---
+
+### config.env Security
+
+The user config file `~/.config/vaultx/config.env` contains paths and security settings.
+
+VaultX verifies and enforces:
+
+- `chmod 644` permissions
+- Ownership by `root:root`  
+- If incorrect, VaultX uses `sudo` or `doas` to fix it automatically
+- If neither is available, the script exits with an error
+
+This ensures the config is readable only as intended and cannot be silently altered by other users.
 
 * **Master Password**
 
