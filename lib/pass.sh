@@ -94,7 +94,6 @@ read_lockout_state() {
   local now
   now=$(date +%s)
 
-  # If tamper lock file exists, check if timer expired
   if [[ -f "$TAMPER_LOCK_FILE" ]]; then
     local tamper_start
     tamper_start=$(<"$TAMPER_LOCK_FILE")
@@ -124,9 +123,15 @@ read_lockout_state() {
 
     if [[ "$sig" != "$expected_sig" ]]; then
       echo "Lockout state was manipulated!" >&2
-      global_fails=9999
-      global_last=$now
-      return
+      if [[ -f "$MASTER_HASH_FILE" ]]; then
+        echo "A one-time lockout of $TAMPER_LOCKOUT_DURATION seconds will be applied due to manipulation." >&2
+        echo "$now" > "$TAMPER_LOCK_FILE"
+        exit 1
+      else
+        global_fails=9999
+        global_last=$now
+        return
+      fi
     fi
 
     if (( fails >= MAX_ATTEMPTS )); then
@@ -135,7 +140,6 @@ read_lockout_state() {
         global_last=$last
         return
       else
-        # Lockout expired → reset
         fails=0
         last=0
         write_lockout_state "$fails" "$last"
@@ -146,7 +150,6 @@ read_lockout_state() {
     global_last=$last
 
   elif [[ ! -f "$MASTER_HASH_FILE" ]]; then
-    # First vault setup – allow access
     global_fails=0
     global_last=0
 
@@ -158,7 +161,6 @@ read_lockout_state() {
   fi
 }
 
-
 write_lockout_state() {
   local fails="$1"
   local last="$2"
@@ -167,7 +169,9 @@ write_lockout_state() {
   sig=$(calc_hmac "$data")
   echo "$fails:$last:$sig" > "$LOCKOUT_STATE_FILE"
   chmod 600 "$LOCKOUT_STATE_FILE"
+  log_action "Lockout state written: $fails fails, last attempt at $last"
 }
+
 
 prompt_and_verify_password() {
   local now
