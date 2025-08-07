@@ -238,6 +238,9 @@ VaultX does not log sensitive information such as plaintext passwords, decrypted
 [2025-07-30 17:13:32] [user:user] Interactive: Selected action: 'Edit existing entry', vault: 'job' entry: '~/.vault/job/slack.bin'
 ```
 ### Lockout 
+
+**It is currently still a work in progress.**
+
 ---VaultX includes a tamper-resistant lockout system that protects against brute-force attacks:
 
 - After `MAX_ATTEMPTS` failed master password logins, the vault enters lockout for `LOCKOUT_DURATION` seconds.
@@ -251,8 +254,6 @@ VaultX does not log sensitive information such as plaintext passwords, decrypted
 - `.lockout_state` is signed with an HMAC to detect file manipulation.
 - If the signature is invalid or the file is missing, a one-time tamper lock is applied (duration: `TAMPER_LOCKOUT_DURATION`).
 - Lockout files are set to `chmod 600`.
-
-> This mechanism ensures that vault access is protected even if an attacker tries to reset the state manually.
 
 ---
 
