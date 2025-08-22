@@ -30,7 +30,7 @@
 
 * `bash` ≥ 4.0
 * `openssl`
-* `htpasswd` (from `apache2-utils` or `httpd-tools`)
+* `htpasswd` (from `apache2-utils` or `httpd-tools`) / argon2
 
 **Optional tools:**
 
