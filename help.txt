@@ -74,7 +74,7 @@ DEPENDENCIES:
   Required:
     bash ≥ 4.0
     openssl
-    htpasswd (apache2-utils or httpd-tools)
+    htpasswd (apache2-utils or httpd-tools) / argon2
 
   Optional:
     xclip or wl-clipboard
