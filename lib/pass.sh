@@ -194,39 +194,65 @@ prompt_and_verify_password() {
   echo
 
   if [[ ! -f "$MASTER_HASH_FILE" ]]; then
-    HASHED=$(htpasswd -nbB -C "$PASSWORD_COST" dummy "$MASTER" | cut -d: -f2)
-    echo "$HASHED" > "$MASTER_HASH_FILE"
+    if [[ "$MASTER_HASH_ALGO" == "argon2" ]]; then
+      SALT=$(head -c "$ARGON2_SALT_BYTES" /dev/urandom | base64)
+      HASHED=$(echo -n "$MASTER" | argon2 "$SALT" -id \
+               -t "$ARGON2_TIME" -m "$ARGON2_MEMORY" -p "$ARGON2_THREADS" -e)
+      { echo "$SALT"; echo "$HASHED"; } > "$MASTER_HASH_FILE"
+    else
+      HASHED=$(htpasswd -nbB -C "$PASSWORD_COST" dummy "$MASTER" | cut -d: -f2)
+      echo "$HASHED" > "$MASTER_HASH_FILE"
+    fi
     chmod 600 "$MASTER_HASH_FILE"
     echo "Master password initialized successfully for '$vault_choice'." >&2
     write_lockout_state 0 0
     return 0
   fi
 
-  STORED_HASH=$(<"$MASTER_HASH_FILE")
-  local tmp
-  tmp=$(mktemp)
-  printf 'dummy:%s\n' "$STORED_HASH" > "$tmp"
-
-  if htpasswd -vbB "$tmp" dummy "$MASTER" &>/dev/null; then
-    rm -f "$tmp"
-    write_lockout_state 0 0
-    return 0
-  else
-    rm -f "$tmp"
-    now=$(date +%s)
-    global_fails=$((global_fails + 1))
-    if (( global_fails > MAX_ATTEMPTS )); then
-      global_fails=$MAX_ATTEMPTS
+  read -r FIRST_LINE < "$MASTER_HASH_FILE"
+  if [[ "$FIRST_LINE" =~ ^\$argon2 ]]; then
+    STORED_HASH="$FIRST_LINE"
+    if [[ "$(echo -n "$MASTER" | argon2 "" -id \
+             -t "$ARGON2_TIME" -m "$ARGON2_MEMORY" -p "$ARGON2_THREADS" -e)" == "$STORED_HASH" ]]; then
+      write_lockout_state 0 0
+      return 0
     fi
-    write_lockout_state "$global_fails" "$now"
-
-    local backoff=$(( global_fails * 2 ))
-    (( backoff > LOCKOUT_DURATION )) && backoff=$LOCKOUT_DURATION
-    sleep "$backoff"
-
-    echo "Invalid master password for '$vault_choice'. Attempt $global_fails of $MAX_ATTEMPTS." >&2
+  elif [[ "$FIRST_LINE" =~ ^[A-Za-z0-9+/=]+$ ]]; then
+    SALT="$FIRST_LINE"
+    STORED_HASH=$(tail -n +2 "$MASTER_HASH_FILE")
+    if [[ "$(echo -n "$MASTER" | argon2 "$SALT" -id \
+             -t "$ARGON2_TIME" -m "$ARGON2_MEMORY" -p "$ARGON2_THREADS" -e)" == "$STORED_HASH" ]]; then
+      write_lockout_state 0 0
+      return 0
+    fi
+  elif [[ "$FIRST_LINE" =~ ^\$2[aby]\$ ]]; then
+    # bcrypt
+    STORED_HASH="$FIRST_LINE"
+    local tmp
+    tmp=$(mktemp)
+    printf 'dummy:%s\n' "$STORED_HASH" > "$tmp"
+    if htpasswd -vbB "$tmp" dummy "$MASTER" &>/dev/null; then
+      rm -f "$tmp"
+      write_lockout_state 0 0
+      return 0
+    fi
+    rm -f "$tmp"
+  else
+    echo "Unknown master password format for vault '$vault_choice'." >&2
     return 1
   fi
+
+  now=$(date +%s)
+  global_fails=$((global_fails + 1))
+  (( global_fails > MAX_ATTEMPTS )) && global_fails=$MAX_ATTEMPTS
+  write_lockout_state "$global_fails" "$now"
+
+  local backoff=$(( global_fails * 2 ))
+  (( backoff > LOCKOUT_DURATION )) && backoff=$LOCKOUT_DURATION
+  sleep "$backoff"
+
+  echo "Invalid master password for '$vault_choice'. Attempt $global_fails of $MAX_ATTEMPTS." >&2
+  return 1
 }
 
 ########################################################################
