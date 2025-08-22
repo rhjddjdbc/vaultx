@@ -59,7 +59,7 @@ nano ~/.config/vaultx/config.env
 Example `config.env`:
 
 ```bash
-# ~/.config/vaultx/config.env
+# config.env
 ###################################################
 #                                                 #
 #                            _ _                  #
@@ -77,17 +77,26 @@ VAULT_DIR="$HOME/.vault"            # Directory where vaults are stored
 BACKUP_DIR="$HOME/vault_backups"    # Location for encrypted vault backups
 LOG_FILE="$HOME/.vaultx.log"        # log file
 
+# Hash algorithm: argon2 or bcrypt
+MASTER_HASH_ALGO="argon2"
+
+ARGON2_TIME=3                       # Iterations
+ARGON2_MEMORY=16                    # 2^16 KiB = 64 MiB
+ARGON2_THREADS=4                    # Threads
+ARGON2_SALT_BYTES=32                # Salt length in bytes
+
+PASSWORD_COST=16                    # Cost factor for bcrypt
 
 # Password options
 PASSWORD_LENGTH=36                  # Default length for generated passwords
-PASSWORD_COST=16                    # BCrypt cost factor for master hash strength
-HIBP_CHECK_CLI=false                # Auto breach check for cli mode
+HIBP_CHECK_CLI=true                 # Auto breach check for cli mode
 
 # Security settings
 MAX_ATTEMPTS=5                      # Max allowed login attempts before lockout
-LOCKOUT_DURATION=600                # Seconds after max attempts
-TAMPER_LOCKOUT_DURATION=900         # Lockout if lockout file is missing (tampering)
+LOCKOUT_DURATION=60                 # Seconds after max attempts
+TAMPER_LOCKOUT_DURATION=30          # Lockout if lockout file is missing (tampering)
 LOGGING_ENABLED=true                # enabeling logging
+
 ```
 
 ## Installation for Arch Linux Users
@@ -269,6 +278,25 @@ VaultX verifies and enforces:
 - If neither is available, the script exits with an error
 
 This ensures the config is readable only as intended and cannot be silently altered by other users.
+
+---
+
+## argon2/Bcrypt
+| Feature                     | Argon2                                             | bcrypt                                   |
+|-----------------------------|----------------------------------------------------|------------------------------------------|
+| **Memory Hardness**         | Highly configurable via `ARGON2_MEMORY` (e.g., 64 MiB or more) | Fixed, low memory usage                  |
+| **Parallelism**             | Adjustable with `ARGON2_THREADS`                   | Single-threaded                          |
+| **Time Cost**               | Tunable via `ARGON2_TIME` iterations               | Controlled by `PASSWORD_COST` (2^cost)   |
+| **Salt Length**             | Customizable (`ARGON2_SALT_BYTES`, e.g., 32 bytes)  | Built-in 16 bytes                        |
+| **PHC String Format**       | Standardized, exact string comparison with `-e`    | Standard `$2y$…` prefix comparison       |
+| **Resistance to GPU Attacks** | Strong, due to high memory requirements          | Moderate                                 |
+| **Adoption & Tools**        | Widely supported in modern tooling                 | Very mature, broad compatibility         |
+
+### Key Points
+
+- **Argon2** offers greater flexibility in tuning memory, time, and parallelism, making it more resistant to specialized hardware attacks.
+- **bcrypt** remains a solid, well-tested choice with widespread support but lacks fine-grained control over resource usage.
+- VaultX lets you choose **Argon2** for new vaults while still opening and verifying **bcrypt** vaults seamlessly.
 
 ---
 
