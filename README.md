@@ -202,7 +202,7 @@ Located in `~/.config/vaultx/config.env`:
 
 * **Master Password**
 
-  * Stored using bcrypt (via `htpasswd -B -C`)
+  * Stored using bcrypt (via `htpasswd -B -C`) or argon2
   * Lockout with exponential backoff on repeated failures
 
 * **Entry Encryption**
