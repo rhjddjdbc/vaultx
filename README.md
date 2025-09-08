@@ -1,6 +1,6 @@
 # VaultX – Secure Command-Line Password Manager
 
-**VaultX** is a minimal, script-based password manager for the command line. It allows you to securely manage multiple isolated vaults, use strong encryption, perform password breach checks, export QR codes, **and now log all major actions** — all within a transparent and portable Bash script.
+**VaultX** is a minimal, script-based password manager for the command line. It allows you to securely manage multiple isolated vaults, use strong encryption, perform password breach checks, export QR codes, and now log all major actions — all within a transparent and portable Bash script.
 
 ---
 
