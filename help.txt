@@ -38,6 +38,13 @@ CONFIGURATION:
     MAX_ATTEMPTS       Max allowed login attempts
     LOCKOUT_DURATION   Lockout duration in seconds
     HIBP_CHECK_CLI     Enable breach check in CLI mode
+    VAULT_RSA          RSA key store path
+    MASTER_HASH_ALGO   Hash algorithm: argon2 or bcrypt
+    ARGON2_TIME        Iterations for argon2 (default: 3)
+    ARGON2_MEMORY      Memory usage for argon2 (default: 16)
+    ARGON2_THREADS     Threads for argon2 (default: 4)
+    ARGON2_SALT_BYTES  Salt length for argon2 (default: 32)
+    TWO_FA_ENABLED     Enable RSA-based 2FA encryption (true/false)
 
 FEATURES:
   • Multiple vault support
@@ -48,6 +55,7 @@ FEATURES:
   • Exponential lockout on repeated login failures
   • Audit vault entries with timestamps
   • CLI mode for scripting and automation
+  • Optional RSA-based 2FA encryption for added security
 
 EXAMPLES:
   Interactive mode:
