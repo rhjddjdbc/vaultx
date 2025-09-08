@@ -21,6 +21,7 @@
 * **script/cli mode**: for add, get, delete, audit, Backup vault/ all vaults
 * **Action Logging**: All major operations are logged with timestamps and user, including vault access, entry changes, Vault creation, password output actions (such as copying to clipboard or displaying as QR code — without logging or storing the password itself and the **username of the associated website** or service,) as well as failed authentications.
 * **Help function**: Outputs a documentation.
+* **Optional RSA Layer**: 2FA-style Double Encryption
 
 ---
 
@@ -74,6 +75,7 @@ Example `config.env`:
 ###################################################
 # Base directories
 VAULT_DIR="$HOME/.vault"            # Directory where vaults are stored
+VAULT_RSA="$HOME/.vault"            # RSA Key store Path
 BACKUP_DIR="$HOME/vault_backups"    # Location for encrypted vault backups
 LOG_FILE="$HOME/.vaultx.log"        # log file
 
@@ -96,6 +98,8 @@ MAX_ATTEMPTS=5                      # Max allowed login attempts before lockout
 LOCKOUT_DURATION=60                 # Seconds after max attempts
 TAMPER_LOCKOUT_DURATION=30          # Lockout if lockout file is missing (tampering)
 LOGGING_ENABLED=true                # enabeling logging
+TWO_FA_ENABLED=true                 # enabeling secondary RSA encryption (2FA)
+
 
 ```
 
@@ -181,21 +185,30 @@ At startup, VaultX prompts you to select or create a vault, then shows the main 
 ```
 
 ---
-
 ## Configurable Settings
 
-Located in `~/.config/vaultx/config.env`:
+The following settings are located in `~/.config/vaultx/config.env`:
 
-| Variable           | Description                                                      |
-| ------------------ | ---------------------------------------------------------------- |
-| `VAULT_DIR`        | Base directory for storing all vaults                            |
-| `PASSWORD_LENGTH`  | Default length for generated passwords                           |
-| `PASSWORD_COST`    | BCrypt cost factor for master password hashing                   |
-| `BACKUP_DIR`       | Directory where ZIP backups are saved                            |
-| `MAX_ATTEMPTS`     | Max failed login attempts before lockout (default: 5)            |
-| `LOCKOUT_DURATION` | Lockout duration in seconds after failed attempts (default: 600) |
-| `LOGGING_ENABLED`  | Enable or disable logging (`true` or `false`)                    |
-| `LOG_FILE`         | Path to the log file                                             |
+| Variable               | Description                                                      |
+| ---------------------- | ---------------------------------------------------------------- |
+| `VAULT_DIR`            | Directory where all vaults are stored                           |
+| `VAULT_RSA`            | Directory for RSA keys (public/private)                         |
+| `BACKUP_DIR`           | Directory where encrypted vault backups are stored              |
+| `LOG_FILE`             | Path to the log file                                             |
+| `MASTER_HASH_ALGO`     | Hash algorithm for the master password: `argon2` or `bcrypt`    |
+| `ARGON2_TIME`          | Number of iterations for Argon2                                  |
+| `ARGON2_MEMORY`        | Memory cost in KiB (e.g., 2^16 = 64 MiB) for Argon2              |
+| `ARGON2_THREADS`       | Number of threads (parallelism) for Argon2                       |
+| `ARGON2_SALT_BYTES`    | Salt length in bytes for Argon2                                  |
+| `PASSWORD_COST`        | Cost factor for bcrypt hashing                                   |
+| `PASSWORD_LENGTH`      | Default length for generated passwords                           |
+| `HIBP_CHECK_CLI`       | Enables or disables the "Have I Been Pwned" check for passwords in CLI mode |
+| `MAX_ATTEMPTS`         | Maximum allowed failed login attempts before lockout             |
+| `LOCKOUT_DURATION`     | Lockout duration in seconds after max failed attempts            |
+| `TAMPER_LOCKOUT_DURATION` | Additional lockout if lockout file is missing (tampering)      |
+| `LOGGING_ENABLED`      | Enables or disables logging of actions                           |
+| `TWO_FA_ENABLED`       | Enables or disables two-factor authentication (2FA)              |
+
 ---
 
 ## Security Overview
@@ -297,6 +310,84 @@ This ensures the config is readable only as intended and cannot be silently alte
 - **Argon2** offers greater flexibility in tuning memory, time, and parallelism, making it more resistant to specialized hardware attacks.
 - **bcrypt** remains a solid, well-tested choice with widespread support but lacks fine-grained control over resource usage.
 - VaultX lets you choose **Argon2** for new vaults while still opening and verifying **bcrypt** vaults seamlessly.
+
+---
+
+### Optional RSA Layer (2FA-style Double Encryption)
+
+VaultX now supports an **optional second encryption layer** using **RSA public-key cryptography**, similar to a two-factor model. When enabled, each entry is encrypted **twice**:
+
+1. First with **AES-256-CBC** (standard VaultX encryption)
+2. Then the resulting encrypted file is encrypted again using **RSA** with your public key (`id_rsa_vault.pub.pem`)
+
+This ensures that even if the master password is compromised, entries **cannot be decrypted without your private RSA key**.
+
+---
+
+### How It Works
+
+* VaultX performs **layered encryption**:
+
+  * The password entry is first encrypted using AES-256-CBC with a derived key from your master password.
+  * The resulting file is then **RSA-encrypted as a whole** using your configured RSA public key.
+* To decrypt an entry, VaultX:
+
+  1. Uses your **private RSA key** to decrypt the file,
+  2. Then prompts for your **master password** to perform AES decryption.
+
+This forms a **double lock**: RSA + AES.
+
+### Setup Instructions
+
+1. **Generate an RSA key pair** (if not already present):
+
+   ```bash
+   openssl genpkey -algorithm RSA -out ~/.vault/id_rsa_vault.pem -pkeyopt rsa_keygen_bits:2048
+   openssl rsa -pubout -in ~/.vault/id_rsa_vault.pem -out ~/.vault/id_rsa_vault.pub.pem
+   ```
+
+2. **Secure your key files**:
+
+   ```bash
+   chmod 600 ~/.vault/id_rsa_vault.pem
+   chmod 644 ~/.vault/id_rsa_vault.pub.pem
+   ```
+
+3. **Enable RSA encryption in your config** (`~/.config/vaultx/config.env`):
+
+   ```bash
+   RSA_ENCRYPTION_ENABLED=true
+   RSA_PUBLIC_KEY="$HOME/.vault/id_rsa_vault.pub.pem"
+   RSA_PRIVATE_KEY="$HOME/.vault/id_rsa_vault.pem"
+   ```
+
+---
+
+### Security Notes
+
+* VaultX performs **full-file RSA encryption**, not hybrid encryption.
+* RSA-encrypted entries **cannot be decrypted** without both:
+
+  * Your private key
+  * Your master password
+* If the private RSA key is missing or invalid, decryption will fail.
+
+---
+
+### Benefits
+
+| Feature                  | Description                                                      |
+| ------------------------ | ---------------------------------------------------------------- |
+| **Layered encryption**   | AES-256 + RSA encryption on the full file                        |
+| **2FA-style access**     | Requires both a password and a private key                       |
+
+---
+
+### Example (CLI Mode)
+
+```bash
+./vaultx.sh --cli --vault default --action get --entry github
+```
 
 ---
 
