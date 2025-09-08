@@ -1,3 +1,4 @@
+# lib/cli_mode.sh
 
 #########################################
 # Entry point for CLI mode
