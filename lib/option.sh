@@ -6,23 +6,41 @@
 ############################################################
 save_new_entry() {
   if ! prompt_and_verify_password; then
-    log_action "Interactive: FAILED AUTHENTICATION by saving new password in Vault: '$vault_choice'." 
+    log_action "Interactive: FAILED AUTHENTICATION while saving new password in Vault: '$vault_choice'." 
     exit 1
   fi
 
-  read -t 30 -r -p "Entry name for '$vault_choice' vault (e.g. github) [timeout 30s]: " selected || { echo -e "\nTimeout reached." >&2; exit 1; }
-  [[ -z "$selected" || ! "$selected" =~ ^[A-Za-z0-9._-]+$ ]] && { echo "Invalid entry name." >&2; exit 1; }
+  rsa_pubkey="$VAULT_RSA/id_rsa_vault.pub.pem"
+  if [[ "$TWO_FA_ENABLED" == true && ! -f "$rsa_pubkey" ]]; then
+    echo "RSA Public Key not found at $rsa_pubkey" >&2
+    exit 1
+  fi
 
-  vault_file="$VAULT_DIR/$selected.bin"
+  read -t 30 -r -p "Entry name for '$vault_choice' vault (e.g. github) [timeout 30s]: " selected || {
+    echo -e "\nTimeout reached." >&2
+    exit 1
+  }
+  [[ -z "$selected" || ! "$selected" =~ ^[A-Za-z0-9._-]+$ ]] && {
+    echo "Invalid entry name. Use letters, numbers, dots, underscores, or hyphens only." >&2
+    exit 1
+  }
+
+  vault_file_base="$VAULT_DIR/$selected"
+  vault_file_tmp="$vault_file_base.aes"
+  vault_file="$vault_file_base.bin"
   counter=2
   while [[ -f "$vault_file" ]]; do
-    vault_file="$VAULT_DIR/$selected-$counter.bin"
-    name="$selected-$counter"
+    vault_file_base="$VAULT_DIR/$selected-$counter"
+    vault_file_tmp="$vault_file_base.aes"
+    vault_file="$vault_file_base.bin"
     ((counter++))
   done
 
   vault_root=$(realpath -m "$VAULT_DIR")
-  [[ "$(realpath -m "$vault_file")" != "$vault_root/"* ]] && { echo "Invalid path." >&2; exit 1; }
+  [[ "$(realpath -m "$vault_file")" != "$vault_root/"* ]] && {
+    echo "Invalid vault path." >&2
+    exit 1
+  }
 
   read -t 30 -r -p "Username (optional) [timeout 30s]: " username || username=""
 
@@ -33,10 +51,25 @@ save_new_entry() {
     [[ -n "$username" ]] && printf "Username: %s\n" "$username"
     printf "Password: %s\n" "$pw"
   } | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -a \
-      -out "$vault_file" -pass fd:3 3<<<"$MASTER"
+      -out "$vault_file_tmp" -pass fd:3 3<<<"$MASTER"
 
+  if [[ "$TWO_FA_ENABLED" == true ]]; then
+    openssl pkeyutl -encrypt -pubin -inkey "$rsa_pubkey" -in "$vault_file_tmp" -out "$vault_file" || {
+      echo "RSA encryption failed." >&2
+      rm -f "$vault_file_tmp"
+      exit 1
+    }
+    echo "2FA enabled – file encrypted with AES + RSA public key."
+    rm -f "$vault_file_tmp"
+  else
+    mv "$vault_file_tmp" "$vault_file"
+    echo "2FA disabled – file encrypted with AES only."
+  fi
+
+  # Generate HMAC for integrity
   hmac=$(openssl dgst -sha256 -mac HMAC -macopt key:file:/dev/fd/3 "$vault_file" 3<<<"$MASTER" | awk '{print $2}')
-  echo "$hmac  $(basename "$vault_file")" > "$VAULT_DIR/$selected.hmac"
+  echo "$hmac  $(basename "$vault_file")" > "$vault_file_base.hmac"
+
   secure_unset
 }
 
@@ -49,27 +82,55 @@ decrypt_entry() {
   [[ -z "$selected" ]] && echo "Cancelled." >&2 && exit 1
 
   file="$selected"
-  hmac_file="${file%.bin}.hmac"
-  [[ ! -f "$hmac_file" ]] && { echo "HMAC file missing for entry." >&2; exit 1; }
+  base="${file%.bin}"
+  hmac_file="$base.hmac"
+
+  [[ ! -f "$hmac_file" ]] && {
+    echo "HMAC file missing for this entry." >&2
+    exit 1
+  }
+
+  rsa_privkey="$VAULT_RSA/id_rsa_vault.pem"
+  if [[ "$TWO_FA_ENABLED" == true && ! -f "$rsa_privkey" ]]; then
+    echo "RSA Private Key not found at $rsa_privkey" >&2
+    exit 1
+  fi
+
+  tmpfile="/tmp/vault_dec_$$.aes"
+
+  if [[ "$TWO_FA_ENABLED" == true ]]; then
+    openssl pkeyutl -decrypt -inkey "$rsa_privkey" -in "$file" -out "$tmpfile" || {
+      echo "RSA decryption failed." >&2
+      rm -f "$tmpfile"
+      exit 1
+    }
+  else
+    cp "$file" "$tmpfile"
+  fi
 
   if ! prompt_and_verify_password; then
-      log_action "Interactive: FAILED AUTHENTICATION by decrypting '$selected' in Vault: '$vault_choice'."
-      exit 1
+    log_action "Interactive: FAILED AUTHENTICATION while decrypting '$selected' in Vault: '$vault_choice'."
+    rm -f "$tmpfile"
+    exit 1
   fi
 
   expected=$(awk '{print $1}' "$hmac_file")
   actual=$(openssl dgst -sha256 -mac HMAC -macopt key:file:/dev/fd/3 "$file" 3<<<"$MASTER" | awk '{print $2}')
   if ! hash_equals "$expected" "$actual"; then
-      echo "Integrity verification failed." >&2
-      secure_unset
-      exit 1
+    echo "Integrity verification failed – possible tampering or wrong master password." >&2
+    rm -f "$tmpfile"
+    secure_unset
+    exit 1
   fi
 
-  decrypted=$(grep -v '^#' "$file" | openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -salt -a -pass fd:3 3<<<"$MASTER") || {
-    echo "Decryption failed." >&2
+  decrypted=$(grep -v '^#' "$tmpfile" | openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -salt -a -pass fd:3 3<<<"$MASTER") || {
+    echo "AES decryption failed – incorrect master password or corrupted data." >&2
+    rm -f "$tmpfile"
     secure_unset
     exit 1
   }
+
+  rm -f "$tmpfile"
 
   user=$(printf '%s\n' "$decrypted" | awk -F': ' '/^Username:/ { print $2 }')
   pass=$(printf '%s\n' "$decrypted" | awk -F': ' '/^Password:/ { print $2 }')
@@ -100,7 +161,7 @@ decrypt_entry() {
         ;;
     "Breach check")
         if check_pwned_password "$pass"; then
-            echo "Password not found in any known breaches." >&2
+            echo "Password not found in any known data breaches." >&2
         fi
         ;;
     *)
@@ -125,28 +186,50 @@ edit_entry() {
   file="$selected"
   name=$(basename "$file" .bin)
 
-  if ! prompt_and_verify_password; then
-    log_action "Interactive: FAILED AUTHENTICATION by editing '$selected' in Vault: '$vault_choice'." 
-    return
+  # Avoid multiple password prompts - check if already verified
+  if [[ -z "$MASTER" ]]; then
+    if ! prompt_and_verify_password; then
+      log_action "Interactive: FAILED AUTHENTICATION while editing '$selected' in Vault: '$vault_choice'."
+      return
+    fi
   fi
 
   tmpfile="/tmp/vault_plain_$$.txt"
+  rsa_privkey="$VAULT_RSA/id_rsa_vault.pem"
 
-  # Decrypt entry to temp file (strips comment lines)
-  grep -v '^#' "$file" | openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -salt -a -pass fd:3 3<<<"$MASTER" > "$tmpfile" || {
-    echo "Failed to decrypt entry." >&2
+  if [[ "$TWO_FA_ENABLED" == true && ! -f "$rsa_privkey" ]]; then
+    echo "RSA Private Key not found at $rsa_privkey" >&2
+    return
+  fi
+
+  # Step 1: RSA Decryption or direct use if 2FA is off
+  if [[ "$TWO_FA_ENABLED" == true ]]; then
+    openssl pkeyutl -decrypt -inkey "$rsa_privkey" -in "$file" -out "$tmpfile" || {
+      echo "RSA decryption failed." >&2
+      rm -f "$tmpfile"
+      secure_unset
+      return
+    }
+  else
+    cp "$file" "$tmpfile"
+  fi
+
+  # Step 2: AES decryption
+  decrypted=$(openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -salt -a \
+              -in "$tmpfile" -pass fd:3 3<<<"$MASTER") || {
+    echo "AES decryption failed – wrong password or corrupted data." >&2
     rm -f "$tmpfile"
     secure_unset
     return
   }
 
-  current_user=$(awk -F': ' '/^Username:/ { print $2 }' "$tmpfile")
-  current_pass=$(awk -F': ' '/^Password:/ { print $2 }' "$tmpfile")
+  current_user=$(awk -F': ' '/^Username:/ { print $2 }' <<< "$decrypted")
+  current_pass=$(awk -F': ' '/^Password:/ { print $2 }' <<< "$decrypted")
 
+  # Prompt for updated values
   read -r -p "Update username (leave blank to keep current: '$current_user'): " username
   [[ -z "$username" ]] && username="$current_user"
 
-  # Ask if the user wants to change the password
   read -r -p "Do you want to change the password? [y/N]: " change_pw
   if [[ "$change_pw" =~ ^[Yy]$ ]]; then
     pw=$(generate_password_prompt) || {
@@ -159,21 +242,54 @@ edit_entry() {
     pw="$current_pass"
   fi
 
+  # Step 3: Create new plaintext content
   {
     echo "# Vault encrypted with OpenSSL AES-256-CBC, PBKDF2, 200000 iterations"
     [[ -n "$username" ]] && printf "Username: %s\n" "$username"
     printf "Password: %s\n" "$pw"
-  } | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -a -out "$file" -pass fd:3 3<<<"$MASTER"
+  } > "$tmpfile"
 
-  rm -f "$tmpfile"
+  vault_file_tmp="$VAULT_DIR/$name.aes"
 
+  # Step 4: AES encrypt updated entry
+  openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -a \
+              -in "$tmpfile" -out "$vault_file_tmp" -pass fd:3 3<<<"$MASTER" || {
+    echo "AES encryption failed." >&2
+    rm -f "$tmpfile"
+    secure_unset
+    return
+  }
+
+  rsa_pubkey="$VAULT_RSA/id_rsa_vault.pub.pem"
+  if [[ "$TWO_FA_ENABLED" == true ]]; then
+    [[ ! -f "$rsa_pubkey" ]] && {
+      echo "RSA Public Key not found at $rsa_pubkey" >&2
+      return
+    }
+
+    openssl pkeyutl -encrypt -pubin -inkey "$rsa_pubkey" \
+                    -in "$vault_file_tmp" -out "$file" || {
+      echo "RSA encryption failed." >&2
+      rm -f "$tmpfile" "$vault_file_tmp"
+      secure_unset
+      return
+    }
+
+    echo "2FA enabled – entry updated using AES + RSA encryption."
+    rm -f "$vault_file_tmp"
+  else
+    mv "$vault_file_tmp" "$file"
+    echo "2FA disabled – entry updated using AES encryption only."
+  fi
+
+  # Step 5: HMAC recalculation
   hmac=$(openssl dgst -sha256 -mac HMAC -macopt key:file:/dev/fd/3 "$file" 3<<<"$MASTER" | awk '{print $2}')
   echo "$hmac  $(basename "$file")" > "$VAULT_DIR/$name.hmac"
 
   echo "Entry '$name' successfully updated."
+  rm -f "$tmpfile"
   secure_unset
 }
-
 
 ################################
 # Delete an entry from the vault
