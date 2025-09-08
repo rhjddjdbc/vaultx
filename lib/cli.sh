@@ -1,23 +1,34 @@
-# lib/cli_mode.sh
 
 #########################################
 # Entry point for CLI mode
 # Handles CLI args and dispatches actions
 #########################################
 run_cli_mode() {
-  vault_choice="$VAULT_CLI"
+  # Vault choice must be explicitly provided by CLI argument or env var VAULT_CLI
+  vault_choice="${VAULT_CLI}"
+
+  if [[ -z "$vault_choice" ]]; then
+    echo "Error: Vault choice must be specified with --vault or VAULT_CLI environment variable." >&2
+    exit 1
+  fi
+
+  VAULT_BASE="${VAULT_BASE:-$HOME/.vault}"
+  VAULT_DIR="$VAULT_BASE/$vault_choice"
+
   if [[ "$ACTION_CLI" == "backup" && "$ALL_CLI" == true ]]; then
     cli_backup_all_vaults
     log_action "CLI: Action: '$ACTION_CLI' all"
     return
- fi
+  fi
 
-  VAULT_DIR="${VAULT_DIR:-vault}/$vault_choice"
+  # Vault-specific files
   MASTER_HASH_FILE="$VAULT_DIR/.master_hash"
   FAIL_COUNT_FILE="$VAULT_DIR/.fail_count"
   LAST_FAIL_FILE="$VAULT_DIR/.last_fail"
+  LOCKOUT_SECRET_FILE="$VAULT_DIR/.lockout_secret"
+  LOCKOUT_STATE_FILE="$VAULT_DIR/.lockout_state"
 
-  # Ensure the vault directory exists
+  # Ensure vault directory exists or create it
   if [[ ! -d "$VAULT_DIR" ]]; then
     echo "Vault '$vault_choice' not found. Creating it now..."
     log_action "Create new Vault: '$vault_choice'"
@@ -25,18 +36,28 @@ run_cli_mode() {
     chmod 700 "$VAULT_DIR"
   fi
 
-  # Now we can safely create the TMP_DIR inside it
+  # Initialize lockout logic after VAULT_DIR is set
+  init_lockout_secret
+  load_lockout_secret
+
+  # Create temporary working directory inside the vault
   TMP_DIR=$(mktemp -d -p "$VAULT_DIR" vaultx-tmp.XXXXXX) || {
     echo "Failed to create temporary directory." >&2
     exit 1
   }
   trap 'rm -rf "$TMP_DIR"' EXIT
+
+  # Validate entry parameter for add/get/delete
   case "$ACTION_CLI" in
     add|get|delete)
-      [[ -z "$ENTRY_CLI" ]] && { echo "Missing entry name (--entry/-e)." >&2; exit 1; }
+      if [[ -z "$ENTRY_CLI" ]]; then
+        echo "Missing entry name (--entry/-e)." >&2
+        exit 1
+      fi
       ;;
   esac
 
+  # Dispatch CLI actions
   case "$ACTION_CLI" in
     add)
       cli_add_entry
@@ -63,7 +84,6 @@ run_cli_mode() {
       exit 1
       ;;
   esac
-
 }
 
 #########################################
@@ -71,21 +91,45 @@ run_cli_mode() {
 #########################################
 cli_add_entry() {
   if ! prompt_and_verify_password; then
-    log_action "CLI: FAILED AUTHENTICATION by saving new password." 
+    log_action "CLI: FAILED AUTHENTICATION while saving new password." 
     exit 1
   fi
 
   file="$VAULT_DIR/$ENTRY_CLI.bin"
-  [[ -f "$file" ]] && { echo "Entry already exists." >&2; exit 1; }
+  if [[ -f "$file" ]]; then
+    echo "Entry already exists." >&2
+    exit 1
+  fi
+
+  rsa_pubkey="$VAULT_RSA/id_rsa_vault.pub.pem"
+  if [[ "$TWO_FA_ENABLED" == true && ! -f "$rsa_pubkey" ]]; then
+    echo "RSA public key not found at $rsa_pubkey" >&2
+    exit 1
+  fi
 
   pw=$(cli_password_input "${METHOD_CLI:-manual}") || exit 1
+  tmpfile="$VAULT_DIR/$ENTRY_CLI.aes"
 
   {
     echo "# AES-256-CBC, PBKDF2, 200000 iterations"
     [[ -n "$USERNAME_CLI" ]] && echo "Username: $USERNAME_CLI"
     echo "Password: $pw"
   } | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -a \
-      -out "$file" -pass fd:3 3<<<"$MASTER"
+      -out "$tmpfile" -pass fd:3 3<<<"$MASTER"
+
+  if [[ "$TWO_FA_ENABLED" == true ]]; then
+     openssl pkeyutl -encrypt -pubin -inkey "$rsa_pubkey" \
+       -in "$tmpfile" -out "$file" || {
+        echo "RSA encryption failed." >&2
+        rm -f "$tmpfile"
+        exit 1
+    }
+    rm -f "$tmpfile"
+    echo "2FA enabled – entry encrypted with AES + RSA."
+  else
+    mv "$tmpfile" "$file"
+    echo "2FA disabled – entry encrypted with AES only."
+  fi
 
   hmac=$(openssl dgst -sha256 -mac HMAC -macopt key:file:/dev/fd/3 "$file" 3<<<"$MASTER" | awk '{print $2}')
   echo "$hmac  $(basename "$file")" > "$VAULT_DIR/$ENTRY_CLI.hmac"
@@ -99,25 +143,59 @@ cli_add_entry() {
 #####################################
 cli_get_entry() {
   file="$VAULT_DIR/$ENTRY_CLI.bin"
-  [[ ! -f "$file" ]] && { echo "Entry '$ENTRY_CLI' not found." >&2; exit 1; }
+  if [[ ! -f "$file" ]]; then
+    echo "Entry '$ENTRY_CLI' not found." >&2
+    exit 1
+  fi
 
-  if ! prompt_and_verify_password; then
-    log_action "CLI: FAILED AUTHENTICATION by decrypting '$ENTRY_CLI'." 
+  rsa_privkey="$VAULT_RSA/id_rsa_vault.pem"
+  if [[ "$TWO_FA_ENABLED" == true && ! -f "$rsa_privkey" ]]; then
+    echo "RSA private key not found at $rsa_privkey" >&2
     exit 1
   fi
 
   hmac_file="${file%.bin}.hmac"
-  [[ ! -f "$hmac_file" ]] && { echo "HMAC file missing." >&2; return 1; }
+  if [[ ! -f "$hmac_file" ]]; then
+    echo "HMAC file missing." >&2
+    return 1
+  fi
+
+  if ! prompt_and_verify_password; then
+    log_action "CLI: FAILED AUTHENTICATION while decrypting '$ENTRY_CLI'." 
+    exit 1
+  fi
 
   expected=$(awk '{print $1}' "$hmac_file")
   actual=$(openssl dgst -sha256 -mac HMAC -macopt key:file:/dev/fd/3 "$file" 3<<<"$MASTER" | awk '{print $2}')
-  ! hash_equals "$expected" "$actual" && { echo "HMAC mismatch."; secure_unset; return 1; }
-
-  decrypted=$(grep -v '^#' "$file" | openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -salt -a -pass fd:3 3<<<"$MASTER") || {
-    echo "Decryption failed." >&2
+  if ! hash_equals "$expected" "$actual"; then
+    echo "HMAC mismatch." >&2
     secure_unset
     return 1
+  fi
+
+  tmpfile="/tmp/vault_cli_$$.aes"
+
+  if [[ "$TWO_FA_ENABLED" == true ]]; then
+    openssl pkeyutl -decrypt -inkey "$rsa_privkey" \
+      -in "$file" -out "$tmpfile" || {
+        echo "RSA decryption failed." >&2
+        rm -f "$tmpfile"
+        secure_unset
+        return 1
+    }
+  else
+    cp "$file" "$tmpfile"
+  fi
+
+  decrypted=$(openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -salt -a \
+    -in "$tmpfile" -pass fd:3 3<<<"$MASTER") || {
+      echo "AES decryption failed." >&2
+      rm -f "$tmpfile"
+      secure_unset
+      return 1
   }
+
+  rm -f "$tmpfile"
 
   user=$(echo "$decrypted" | awk -F': ' '/^Username:/ { print $2 }')
   pass=$(echo "$decrypted" | awk -F': ' '/^Password:/ { print $2 }')
@@ -126,7 +204,7 @@ cli_get_entry() {
   echo "Password: $pass"
 
   if [[ "$HIBP_CHECK_CLI" == "true" ]]; then
-     check_pwned_password "$pass"; 
+    check_pwned_password "$pass"
   fi
 
   secure_unset
@@ -161,7 +239,7 @@ cli_delete_entry() {
     secure_unset  
 }
 
-#####################################################
+######################################################
 # Handles password input for CLI (manual or generated)
 ######################################################
 cli_password_input() {
