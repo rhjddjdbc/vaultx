@@ -263,7 +263,7 @@ VaultX does not log sensitive information such as plaintext passwords, decrypted
 
 **It is currently still a work in progress.**
 
----VaultX includes a tamper-resistant lockout system that protects against brute-force attacks:
+VaultX includes a tamper-resistant lockout system that protects against brute-force attacks:
 
 - After `MAX_ATTEMPTS` failed master password logins, the vault enters lockout for `LOCKOUT_DURATION` seconds.
 - Each vault stores its own lockout metadata in:
